@@ -18,6 +18,24 @@ function getWeekDays(offset = 0) {
   });
 }
 
+function getMonthGrid(offset = 0) {
+  const base = new Date();
+  base.setDate(1);
+  base.setMonth(base.getMonth() + offset);
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  const startDow = (new Date(year, month, 1).getDay() + 6) % 7; // Monday-start
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const rows = Math.ceil((startDow + daysInMonth) / 7);
+  const gridStart = new Date(year, month, 1 - startDow);
+  const days = Array.from({ length: rows * 7 }, (_, i) => {
+    const d = new Date(gridStart);
+    d.setDate(gridStart.getDate() + i);
+    return d;
+  });
+  return { days, month, year, label: base.toLocaleDateString(undefined, { month: "long", year: "numeric" }) };
+}
+
 function isSameDay(a, b) {
   return (
     a.getFullYear() === b.getFullYear() &&
@@ -42,7 +60,9 @@ function DeadlineBadge({ deadline }) {
 
 export default function Calendar() {
   const [tasks, setTasks] = useState([]);
+  const [view, setView] = useState("week"); // "week" | "month"
   const [weekOffset, setWeekOffset] = useState(0);
+  const [monthOffset, setMonthOffset] = useState(0);
   const [selected, setSelected] = useState(null);
 
   useEffect(() => {
@@ -50,7 +70,9 @@ export default function Calendar() {
   }, []);
 
   const days = getWeekDays(weekOffset);
+  const month = getMonthGrid(monthOffset);
   const today = new Date();
+  const isMonth = view === "month";
 
   const activeTasks = tasks.filter((t) => t.status !== "done");
 
@@ -69,31 +91,46 @@ export default function Calendar() {
 
   return (
     <main className="p-unit-lg md:p-margin-desktop pb-24">
-      <header className="flex items-center justify-between mb-gutter animate-fade-in-up">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-gutter animate-fade-in-up">
         <div>
           <h1 className="font-headline-lg text-headline-lg font-bold tracking-tight text-on-surface">
-            Weekly Focus
+            {isMonth ? "Monthly Focus" : "Weekly Focus"}
           </h1>
           <p className="text-on-surface-variant font-body-md">
-            {days[0].toLocaleDateString(undefined, { month: "short", day: "numeric" })} –{" "}
-            {days[6].toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+            {isMonth
+              ? month.label
+              : `${days[0].toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${days[6].toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Week / Month toggle */}
+          <div className="flex bg-surface-container-high rounded-xl p-0.5 mr-1">
+            {["week", "month"].map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1.5 rounded-lg text-label-md font-bold capitalize transition-colors ${
+                  view === v ? "bg-primary text-on-primary-fixed" : "text-on-surface-variant hover:text-on-surface"
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
           <button
-            onClick={() => setWeekOffset((o) => o - 1)}
+            onClick={() => (isMonth ? setMonthOffset((o) => o - 1) : setWeekOffset((o) => o - 1))}
             className="w-9 h-9 rounded-xl bg-surface-container-high text-on-surface flex items-center justify-center hover:bg-surface-container-highest transition-colors"
           >
             <span className="material-symbols-outlined text-base">chevron_left</span>
           </button>
           <button
-            onClick={() => setWeekOffset(0)}
+            onClick={() => (isMonth ? setMonthOffset(0) : setWeekOffset(0))}
             className="px-3 py-1.5 rounded-xl bg-surface-container-high text-on-surface text-label-md font-bold hover:bg-surface-container-highest transition-colors"
           >
-            This week
+            Today
           </button>
           <button
-            onClick={() => setWeekOffset((o) => o + 1)}
+            onClick={() => (isMonth ? setMonthOffset((o) => o + 1) : setWeekOffset((o) => o + 1))}
             className="w-9 h-9 rounded-xl bg-surface-container-high text-on-surface flex items-center justify-center hover:bg-surface-container-highest transition-colors"
           >
             <span className="material-symbols-outlined text-base">chevron_right</span>
@@ -102,6 +139,7 @@ export default function Calendar() {
       </header>
 
       {/* Week grid */}
+      {!isMonth && (
       <div className="grid grid-cols-7 gap-1 mb-4 animate-fade-in-up">
         {days.map((day, i) => {
           const dayTasks = tasksForDay(day);
@@ -156,6 +194,68 @@ export default function Calendar() {
           );
         })}
       </div>
+      )}
+
+      {/* Month grid */}
+      {isMonth && (
+        <div className="animate-fade-in-up">
+          <div className="grid grid-cols-7 gap-1 mb-1">
+            {DAY_NAMES.map((d) => (
+              <div
+                key={d}
+                className="text-[10px] text-on-surface-variant uppercase tracking-widest text-center py-1 font-bold"
+              >
+                {d}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {month.days.map((day, i) => {
+              const dayTasks = tasksForDay(day);
+              const inMonth = day.getMonth() === month.month;
+              const isT = isToday(day);
+              return (
+                <div
+                  key={i}
+                  className={`min-h-[88px] rounded-lg border p-1.5 flex flex-col transition-colors ${
+                    isT
+                      ? "border-primary/50 bg-primary/5"
+                      : "border-outline-variant/30 bg-surface-container-lowest"
+                  } ${inMonth ? "" : "opacity-40"}`}
+                >
+                  <div
+                    className={`text-[11px] font-bold leading-none mb-1 ${
+                      isT ? "text-primary" : "text-on-surface"
+                    }`}
+                  >
+                    {day.getDate()}
+                  </div>
+                  <div className="space-y-0.5 overflow-hidden">
+                    {dayTasks.slice(0, 3).map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setSelected(t)}
+                        className="w-full text-left rounded px-1 py-0.5 text-[10px] font-medium text-on-surface leading-tight truncate hover:opacity-80 transition-opacity"
+                        style={{
+                          background: (CAT_COLOR[t.category] || "#c0c1ff") + "22",
+                          borderLeft: `2px solid ${CAT_COLOR[t.category] || "#c0c1ff"}`,
+                        }}
+                      >
+                        {t.title}
+                      </button>
+                    ))}
+                    {dayTasks.length > 3 && (
+                      <div className="text-[9px] text-on-surface-variant pl-1">
+                        +{dayTasks.length - 3} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Task detail popover */}
       {selected && (

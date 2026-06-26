@@ -1,0 +1,445 @@
+"""The Deadline agent loop.
+
+sense -> plan -> act -> observe -> replan cycle driven by Gemini function-calling.
+
+- run_agent(): handles user brain-dump.
+- chat_agent(): conversational AI coach.
+- smart_suggest(): surface hidden at-risk items and priority recommendations.
+- tick(): autonomous cycle for Cloud Scheduler.
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+
+from . import store, tools
+
+MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+MAX_STEPS = 8
+
+BRAIN_DUMP_SYSTEM = """You are Deadline, an autonomous productivity agent. You do not just remind — you act.
+
+When given a brain-dump:
+1. Call read_gmail_deadlines to check for hidden email commitments.
+2. Call upsert_tasks to save EVERY commitment as a structured task with title, deadline (ISO or null),
+   priority (1=highest..5), effort_minutes, category (academic|work|finance|health|personal|admin).
+3. Call get_calendar to check free slots, then call schedule_block for each urgent task (priority ≤ 2).
+4. For the highest-priority task, call draft_deliverable with kind=outline to give the user a head start.
+5. Reply with a concise plain-language summary: what you found, what you scheduled, what needs attention.
+
+Be decisive. If a deadline is ambiguous, pick a reasonable date. Prioritize ruthlessly."""
+
+COACH_SYSTEM = """You are Deadline, an empathetic AI productivity coach. Your role:
+- Help users plan, prioritize, and complete tasks under pressure
+- Give concrete, actionable advice — not platitudes
+- When the user seems overwhelmed, break the problem into the single next action
+- Reference their actual tasks when relevant (provided in context)
+- Keep responses focused and under 120 words unless a detailed plan is asked for
+- Use a direct, encouraging tone"""
+
+
+@dataclass
+class AgentResult:
+    tasks: list[dict] = field(default_factory=list)
+    message: str = ""
+    approvals: list[dict] = field(default_factory=list)
+
+
+def _today_context() -> str:
+    now = datetime.now(timezone.utc)
+    return (f"\n\nThe current date and time is {now:%A, %d %B %Y, %H:%M} UTC. "
+            f"Compute ALL deadlines relative to this exact date (never assume a different year). "
+            f"Express deadlines in ISO 8601 (e.g. {now:%Y-%m-%d}T18:00:00).")
+
+
+def _model_with_tools():
+    import google.generativeai as genai
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
+    return genai.GenerativeModel(
+        MODEL, system_instruction=BRAIN_DUMP_SYSTEM + _today_context(),
+        tools=[{"function_declarations": tools.TOOL_DECLARATIONS}],
+    )
+
+
+def _model_plain(system: str = ""):
+    import google.generativeai as genai
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
+    kwargs = {"system_instruction": system + _today_context()} if system else {}
+    return genai.GenerativeModel(MODEL, **kwargs)
+
+
+def _to_plain(obj):
+    """Recursively convert Gemini proto args (MapComposite/RepeatedComposite)
+    into plain Python dicts/lists so tools and json.dumps work."""
+    if isinstance(obj, (str, bytes, int, float, bool)) or obj is None:
+        return obj
+    if hasattr(obj, "items"):
+        return {k: _to_plain(v) for k, v in obj.items()}
+    try:
+        return [_to_plain(v) for v in obj]
+    except TypeError:
+        return obj
+
+
+def _run_tool_loop(uid: str, opening: str) -> str:
+    model = _model_with_tools()
+    chat = model.start_chat()
+    msg = opening
+    for step in range(MAX_STEPS):
+        # Force upsert_tasks on the first turn so tasks are ALWAYS saved reliably
+        # (smaller models otherwise just chat instead of calling the tool).
+        kwargs = {}
+        if step == 0:
+            kwargs["tool_config"] = {
+                "function_calling_config": {
+                    "mode": "ANY", "allowed_function_names": ["upsert_tasks"],
+                }
+            }
+        resp = chat.send_message(msg, **kwargs)
+        calls = [p.function_call for p in resp.candidates[0].content.parts
+                 if getattr(p, "function_call", None) and p.function_call.name]
+        if not calls:
+            return resp.text or ""
+        replies = []
+        for fc in calls:
+            args = _to_plain(fc.args) if fc.args else {}
+            result = tools.call_tool(fc.name, uid, args)
+            replies.append({"function_response": {"name": fc.name, "response": result}})
+        msg = replies
+    return "Step limit reached; partial plan saved."
+
+
+# ---- Offline / fallback brain-dump parser -----------------------------------
+# Keeps the agent useful when Gemini is rate-limited or the key is missing.
+
+import re
+from datetime import timedelta
+
+_CAT_KEYWORDS = {
+    "academic": ["assignment", "homework", "study", "exam", "essay", "lecture", "quiz",
+                 "thesis", "paper", "course", "class", "cs ", "lab", "revise"],
+    "finance": ["bill", "pay", "rent", "invoice", "budget", "tax", "payment",
+                "subscription", "renew", "fee", "refund"],
+    "health": ["dentist", "doctor", "gym", "workout", "appointment", "medic",
+               "therapy", "checkup", "vaccine", "run"],
+    "work": ["presentation", "slides", "client", "meeting", "project", "internship",
+             "application", "report", "deck", "email", "interview", "standup", "deploy", "demo"],
+    "personal": ["groceries", "buy", "clean", "call", "laundry", "shop", "cook",
+                 "family", "mom", "dad", "gift", "book"],
+    "admin": ["submit", "form", "register", "renew", "sign", "apply", "schedule", "file"],
+}
+_WEEKDAYS = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+             "friday": 4, "saturday": 5, "sunday": 6}
+_MONTHS = {"january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+           "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12}
+
+
+def _guess_category(t: str) -> str:
+    tl = t.lower()
+    for cat, kws in _CAT_KEYWORDS.items():
+        if any(k in tl for k in kws):
+            return cat
+    return "personal"
+
+
+def _guess_deadline(t: str, now: datetime) -> str | None:
+    tl = t.lower()
+    hour, minute = 23, 59
+    m = re.search(r"(\d{1,2})\s*(am|pm)", tl)
+    if m:
+        hour = int(m.group(1)) % 12 + (12 if m.group(2) == "pm" else 0)
+        minute = 0
+
+    target = None
+    if "tonight" in tl or "today" in tl:
+        target = now
+    elif "tomorrow" in tl:
+        target = now + timedelta(days=1)
+    elif "weekend" in tl:
+        target = now + timedelta(days=(5 - now.weekday()) % 7 or 7)  # next Saturday
+    elif "next week" in tl:
+        target = now + timedelta(days=7)
+    elif "this week" in tl:
+        target = now + timedelta(days=3)
+    elif "end of month" in tl or "month end" in tl:
+        nxt = (now.replace(day=28) + timedelta(days=4))
+        target = nxt - timedelta(days=nxt.day)
+    if target is None:
+        for name, idx in _WEEKDAYS.items():
+            if name in tl:
+                target = now + timedelta(days=(idx - now.weekday()) % 7 or 7)
+                break
+    if target is None:
+        m2 = (re.search(r"(" + "|".join(_MONTHS) + r")\s+(\d{1,2})", tl)
+              or re.search(r"(\d{1,2})\s+(" + "|".join(_MONTHS) + r")", tl))
+        if m2:
+            g1, g2 = m2.group(1), m2.group(2)
+            month = _MONTHS.get(g1) or _MONTHS.get(g2)
+            day = int(g2 if g1 in _MONTHS else g1)
+            year = now.year + (1 if month < now.month else 0)
+            try:
+                target = now.replace(year=year, month=month, day=day)
+            except ValueError:
+                target = None
+    if target is None:
+        return None
+    return target.replace(hour=hour, minute=minute, second=0, microsecond=0).isoformat()
+
+
+def _guess_priority(t: str, deadline: str | None, now: datetime) -> int:
+    tl = t.lower()
+    if any(w in tl for w in ["urgent", "asap", "tonight", "immediately", "critical"]):
+        return 1
+    if deadline:
+        hrs = (datetime.fromisoformat(deadline) - now).total_seconds() / 3600
+        if hrs <= 24:
+            return 1
+        if hrs <= 72:
+            return 2
+        if hrs <= 168:
+            return 3
+    if any(w in tl for w in ["someday", "eventually", "sometime"]):
+        return 4
+    return 3
+
+
+def _guess_effort(t: str) -> int:
+    tl = t.lower()
+    if any(w in tl for w in ["call", "email", "pay", "buy", "submit", "renew", "register"]):
+        return 20
+    if any(w in tl for w in ["assignment", "presentation", "project", "report", "essay", "thesis"]):
+        return 120
+    return 60
+
+
+_DEADLINE_PHRASES = re.compile(
+    r"\b(due|by|before|on|until|till)\b.*$"
+    r"|\b(today|tonight|tomorrow|this week|this weekend|next week|end of month|month end)\b"
+    r"|\b(mon|tues|wednes|thurs|fri|satur|sun)day\b"
+    r"|\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}\b"
+    r"|\d{1,2}\s*(am|pm)\b",
+    re.IGNORECASE,
+)
+
+
+def _clean_title(raw: str) -> str:
+    """Strip trailing deadline phrases so titles read cleanly."""
+    title = _DEADLINE_PHRASES.sub("", raw).strip(" \t-,.")
+    title = re.sub(r"\s{2,}", " ", title)
+    if not title:
+        title = raw.strip(" \t-,.")
+    return (title[0].upper() + title[1:])[:120]
+
+
+def _heuristic_parse(text: str, uid: str) -> list[dict]:
+    """Split a brain-dump into structured tasks without an LLM."""
+    now = datetime.now(timezone.utc)
+    items = [s.strip(" \t-•*.,") for s in re.split(r"[\n;,]+|\band\b", text) if s.strip(" \t-•*.,")]
+    parsed = []
+    for raw in items:
+        if len(raw) < 3:
+            continue
+        deadline = _guess_deadline(raw, now)
+        parsed.append({
+            "title": _clean_title(raw),
+            "deadline": deadline,
+            "priority": _guess_priority(raw, deadline, now),
+            "effort_minutes": _guess_effort(raw),
+            "category": _guess_category(raw),
+            "status": "todo",
+        })
+    if parsed:
+        store.upsert_tasks(uid, parsed)
+    return store.get_tasks(uid)
+
+
+def _offline_summary(tasks: list[dict], reason: str) -> str:
+    n = len(tasks)
+    return (f"Organized {n} task{'s' if n != 1 else ''} using quick-parse "
+            f"(AI {reason}). I sorted them by urgency — review priorities on the Today screen.")
+
+
+async def run_agent(text: str, uid: str) -> AgentResult:
+    if not os.getenv("GEMINI_API_KEY"):
+        tasks = _heuristic_parse(text, uid)
+        return AgentResult(tasks=tasks, message=_offline_summary(tasks, reason="no API key"))
+
+    before = len(store.get_tasks(uid))
+    try:
+        summary = _run_tool_loop(uid, f"Brain-dump from the user:\n\n{text}\n\nProcess this now.")
+        return AgentResult(
+            tasks=store.get_tasks(uid),
+            message=summary,
+            approvals=store.list_approvals(uid),
+        )
+    except Exception as e:
+        # If the tool loop already saved tasks before failing (e.g. on the
+        # summary turn), keep them — don't double-parse with the heuristic.
+        saved = store.get_tasks(uid)
+        if len(saved) > before:
+            return AgentResult(
+                tasks=saved,
+                message=f"Organized {len(saved) - before} task(s). Review them on the Today screen.",
+                approvals=store.list_approvals(uid),
+            )
+        # Gemini unavailable / rate-limited → keep the app fully functional.
+        err = str(e).lower()
+        reason = "rate limit reached" if ("429" in err or "quota" in err) else "AI temporarily unavailable"
+        tasks = _heuristic_parse(text, uid)
+        return AgentResult(tasks=tasks, message=_offline_summary(tasks, reason=reason))
+
+
+def chat_agent(message: str, uid: str, history: list[dict]) -> str:
+    """Conversational AI coach. Returns the agent's reply text."""
+    if not os.getenv("GEMINI_API_KEY"):
+        return ("I'm in demo mode (no Gemini API key). Set GEMINI_API_KEY in .env to "
+                "enable the AI coach. For now: focus on your highest-priority task first.")
+
+    try:
+        tasks = store.get_tasks(uid)
+        active = [t for t in tasks if t.get("status") != "done"]
+        task_ctx = ""
+        if active:
+            lines = []
+            for t in active[:8]:
+                dl = t.get("deadline", "no deadline")
+                lines.append(f"- [{t.get('category','?')}] {t['title']} (priority {t.get('priority',3)}, due {dl})")
+            task_ctx = "\nUser's current tasks:\n" + "\n".join(lines)
+
+        model = _model_plain(COACH_SYSTEM + task_ctx)
+        # Convert history to SDK format
+        chat_history = []
+        for h in history[-10:]:  # keep last 10 turns
+            role = "user" if h.get("role") == "user" else "model"
+            chat_history.append({"role": role, "parts": [h.get("content", "")]})
+        chat = model.start_chat(history=chat_history)
+        resp = chat.send_message(message)
+        return resp.text or "I couldn't generate a response. Please try again."
+    except Exception as e:
+        err = str(e)
+        if "429" in err or "quota" in err.lower() or "rate" in err.lower():
+            return ("I've hit the Gemini API rate limit for now. "
+                    "The free tier allows ~15 requests/minute. "
+                    "Wait 60 seconds and try again, or upgrade your Google AI Studio plan.")
+        return "Sorry, something went wrong on my end. Please try again in a moment."
+
+
+def smart_suggest(uid: str) -> dict:
+    """Surface AI-powered insights: at-risk tasks, scheduling gaps, productivity tips."""
+    tasks = store.get_tasks(uid)
+    active = [t for t in tasks if t.get("status") != "done"]
+    done_count = len([t for t in tasks if t.get("status") == "done"])
+
+    now = datetime.now(timezone.utc)
+    at_risk = []
+    overdue = []
+    for t in active:
+        if not t.get("deadline"):
+            continue
+        try:
+            dl = datetime.fromisoformat(t["deadline"].replace("Z", "+00:00"))
+            if dl.tzinfo is None:
+                dl = dl.replace(tzinfo=timezone.utc)
+        except (ValueError, AttributeError):
+            continue
+        hours_left = (dl - now).total_seconds() / 3600
+        needed = t.get("effort_minutes", 60) / 60
+        if hours_left < 0:
+            overdue.append(t)
+        elif hours_left < needed * 2:
+            at_risk.append(t)
+
+    suggestions = []
+
+    if overdue:
+        for t in overdue[:3]:
+            suggestions.append({
+                "type": "overdue",
+                "icon": "error",
+                "color": "error",
+                "title": f"Overdue: {t['title']}",
+                "body": "This task is past its deadline. Decide: do it now, reschedule, or drop it.",
+                "task_id": t["id"],
+            })
+
+    if at_risk:
+        for t in at_risk[:3]:
+            suggestions.append({
+                "type": "at_risk",
+                "icon": "warning",
+                "color": "warning",
+                "title": f"At risk: {t['title']}",
+                "body": f"Only {int((datetime.fromisoformat(t['deadline'].replace('Z','+00:00')).replace(tzinfo=timezone.utc) - now).total_seconds() / 3600)}h left but ~{t.get('effort_minutes', 60)} min of work needed.",
+                "task_id": t["id"],
+            })
+
+    if not active:
+        suggestions.append({
+            "type": "empty",
+            "icon": "celebration",
+            "color": "primary",
+            "title": "Nothing on your plate!",
+            "body": "Use Brain-dump to add your next commitments.",
+            "task_id": None,
+        })
+    elif done_count > 0:
+        pct = int(done_count / len(tasks) * 100)
+        suggestions.append({
+            "type": "progress",
+            "icon": "trending_up",
+            "color": "secondary",
+            "title": f"{pct}% complete this session",
+            "body": f"{done_count} of {len(tasks)} tasks done. Keep the momentum!",
+            "task_id": None,
+        })
+
+    if not os.getenv("GEMINI_API_KEY") or not active:
+        return {"suggestions": suggestions, "ai_tip": None}
+
+    try:
+        top = sorted(active, key=lambda t: (t.get("priority", 5), t.get("deadline") or "9999"))[:3]
+        task_summary = "; ".join(f"{t['title']} (p{t.get('priority',3)})" for t in top)
+        model = _model_plain()
+        prompt = (
+            f"Give ONE sharp, specific productivity tip (2 sentences max) for someone "
+            f"whose top pending tasks are: {task_summary}. "
+            f"Focus on what to do RIGHT NOW. No platitudes."
+        )
+        resp = model.generate_content(prompt)
+        ai_tip = resp.text.strip() if resp.text else None
+    except Exception:
+        ai_tip = None
+
+    return {"suggestions": suggestions, "ai_tip": ai_tip}
+
+
+def tick(uid: str) -> dict:
+    """Autonomous OBSERVE -> REPLAN cycle for Cloud Scheduler."""
+    now = datetime.now(timezone.utc)
+    tasks = store.get_tasks(uid)
+    at_risk = []
+    for t in tasks:
+        if t.get("status") == "done" or not t.get("deadline"):
+            continue
+        try:
+            dl = datetime.fromisoformat(t["deadline"].replace("Z", "+00:00"))
+            if dl.tzinfo is None:
+                dl = dl.replace(tzinfo=timezone.utc)
+        except (ValueError, AttributeError):
+            continue
+        hours_left = (dl - now).total_seconds() / 3600
+        needed = t.get("effort_minutes", 60) / 60
+        if hours_left < needed * 2:
+            at_risk.append(t)
+
+    actions = {"at_risk": [t["id"] for t in at_risk], "drafted": [], "replanned": False}
+    if at_risk:
+        store.replan(uid, reason=f"{len(at_risk)} task(s) at risk on tick")
+        actions["replanned"] = True
+        for t in at_risk:
+            role = "professor" if t.get("category") == "academic" else "manager"
+            res = tools.draft_message(uid, task_id=t["id"], task_title=t.get("title", ""),
+                                      intent="extension", recipient_role=role)
+            actions["drafted"].append(res.get("approval_id"))
+    return actions

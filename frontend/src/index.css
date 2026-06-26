@@ -1,0 +1,149 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Theme tokens: RGB channel triplets consumed by tailwind.config.js ---- */
+/* :root = light (default).  .dark = dark.  An inline script in index.html sets
+   the .dark class before paint, so there is no flash. */
+:root {
+  color-scheme: light;
+  --primary: 73 75 214;
+  --on-primary: 255 255 255;
+  --on-primary-fixed: 255 255 255;      /* used as text on bg-primary buttons */
+  --on-primary-fixed-variant: 47 46 190;
+  --primary-container: 225 224 255;
+  --on-primary-container: 7 0 108;
+  --primary-fixed: 225 224 255;
+  --surface-tint: 73 75 214;
+  --inverse-primary: 192 193 255;
+
+  --background: 251 249 255;
+  --surface: 251 249 255;
+  --surface-dim: 218 216 226;
+  --surface-bright: 251 249 255;
+  --surface-container-lowest: 255 255 255;
+  --surface-container-low: 245 242 251;
+  --surface-container: 239 237 246;
+  --surface-container-high: 233 231 241;
+  --surface-container-highest: 227 225 235;
+  --surface-variant: 226 224 236;
+  --inverse-on-surface: 242 239 247;
+
+  --on-surface: 27 27 33;
+  --on-background: 27 27 33;
+  --on-surface-variant: 70 70 79;
+  --outline: 118 118 128;
+  --outline-variant: 199 197 208;
+
+  --secondary: 120 90 0;
+  --on-secondary: 255 255 255;
+  --secondary-container: 255 221 176;
+  --secondary-fixed: 255 221 184;
+  --secondary-fixed-dim: 255 185 95;
+
+  --tertiary: 150 70 0;
+  --tertiary-container: 255 220 194;
+
+  --error: 186 26 26;
+  --on-error-container: 65 0 2;
+  --warning-amber: 180 83 9;
+}
+
+.dark {
+  color-scheme: dark;
+  --primary: 192 193 255;
+  --on-primary: 16 0 169;
+  --on-primary-fixed: 7 0 108;
+  --on-primary-fixed-variant: 47 46 190;
+  --primary-container: 128 131 255;
+  --on-primary-container: 13 0 150;
+  --primary-fixed: 225 224 255;
+  --surface-tint: 192 193 255;
+  --inverse-primary: 73 75 214;
+
+  --background: 18 19 23;
+  --surface: 18 19 23;
+  --surface-dim: 18 19 23;
+  --surface-bright: 56 57 61;
+  --surface-container-lowest: 13 14 18;
+  --surface-container-low: 26 27 32;
+  --surface-container: 31 31 36;
+  --surface-container-high: 41 42 46;
+  --surface-container-highest: 52 52 57;
+  --surface-variant: 52 52 57;
+  --inverse-on-surface: 47 48 53;
+
+  --on-surface: 227 226 231;
+  --on-background: 227 226 231;
+  --on-surface-variant: 199 196 215;
+  --outline: 144 143 160;
+  --outline-variant: 70 69 84;
+
+  --secondary: 255 185 95;
+  --on-secondary: 71 42 0;
+  --secondary-container: 238 152 0;
+  --secondary-fixed: 255 221 184;
+  --secondary-fixed-dim: 255 185 95;
+
+  --tertiary: 255 183 131;
+  --tertiary-container: 217 119 33;
+
+  --error: 255 180 171;
+  --on-error-container: 255 218 214;
+  --warning-amber: 245 158 11;
+}
+
+body { font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Glass surfaces — light by default, dark override. */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+.dark .glass-panel { background: rgba(26, 27, 35, 0.7); }
+.glass-card {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+.dark .glass-card {
+  background: rgba(26, 27, 35, 0.7);
+  border-color: rgba(45, 46, 55, 1);
+}
+.input-focus-glow:focus { box-shadow: 0 0 0 2px rgba(192, 193, 255, 0.2); }
+.glow-background {
+  position: absolute; width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(192,193,255,0.08) 0%, rgba(192,193,255,0) 70%);
+  filter: blur(60px); z-index: 0; pointer-events: none;
+}
+.warning-glow { box-shadow: 0 0 40px -8px rgba(245, 158, 11, 0.35); }
+.brain-dump-shadow { box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+.dark .brain-dump-shadow { box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+.hover\:scale-102:hover { transform: scale(1.02); }
+@keyframes pulse-indigo { 0%,100% { opacity: .4 } 50% { opacity: .7 } }
+.animate-pulse-slow { animation: pulse-indigo 4s cubic-bezier(0.4,0,0.6,1) infinite; }
+
+/* ---- Entrance + interaction motion ---- */
+@keyframes fade-in-up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.animate-fade-in-up { animation: fade-in-up .55s cubic-bezier(.16,1,.3,1) both; }
+.animate-fade-in { animation: fade-in .4s ease both; }
+.card-lift { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+.card-lift:hover { transform: translateY(-3px); box-shadow: 0 12px 30px -12px rgba(0,0,0,.30); }
+.dark .card-lift:hover { box-shadow: 0 12px 30px -10px rgba(0,0,0,.55); }
+/* Gradient text accent for headings */
+.text-gradient {
+  background: linear-gradient(120deg, rgb(var(--primary)), rgb(var(--inverse-primary)));
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+
+/* Scrollbar adapts to theme. */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgb(var(--outline-variant)); border-radius: 10px; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

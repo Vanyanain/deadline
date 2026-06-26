@@ -1,0 +1,36 @@
+# --- Secrets (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*-key.json
+*-credentials.json
+serviceAccount*.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.egg-info/
+
+# --- Databases ---
+*.db
+*.sqlite3
+
+# --- Node / frontend ---
+node_modules/
+dist/
+*.local
+
+# --- Logs ---
+*.log
+npm-debug.log*
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# --- Playwright artifacts ---
+.playwright-mcp/

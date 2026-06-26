@@ -14,7 +14,10 @@ from pydantic import BaseModel
 
 import secrets
 
-from .agent import run_agent, tick, chat_agent, smart_suggest, AgentResult
+from .agent import (
+    run_agent, tick, chat_agent, smart_suggest, AgentResult,
+    kickstart_task, task_reasoning,
+)
 from .auth import (
     verify_token, verify_token_or_cron,
     hash_password, verify_password, create_access_token,
@@ -194,6 +197,28 @@ def delete_task(task_id: str, uid: str = Depends(verify_token)):
     if not ok:
         raise HTTPException(status_code=404, detail="Task not found")
     return {"deleted": task_id}
+
+
+# ---------- Kickstart + Why-now (AI action helpers) --------------------------
+
+class KickstartRequest(BaseModel):
+    kind: Optional[str] = None  # outline | email | checklist | steps
+
+
+@app.post("/api/tasks/{task_id}/kickstart")
+def kickstart(task_id: str, req: KickstartRequest, uid: str = Depends(verify_token)):
+    res = kickstart_task(uid, task_id, req.kind)
+    if not res:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return res
+
+
+@app.get("/api/tasks/{task_id}/why")
+def why_now(task_id: str, uid: str = Depends(verify_token)):
+    res = task_reasoning(uid, task_id)
+    if not res:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return res
 
 
 # ---------- approvals --------------------------------------------------------

@@ -63,12 +63,54 @@ export default function AICoach() {
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [voiceOn, setVoiceOn] = useState(false);
+  const [listening, setListening] = useState(false);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  const recogRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
+
+  // Stop any speech when leaving the screen.
+  useEffect(() => () => window.speechSynthesis?.cancel(), []);
+
+  function speak(text) {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.05;
+    window.speechSynthesis.speak(u);
+  }
+
+  function toggleVoice() {
+    setVoiceOn((v) => {
+      if (v) window.speechSynthesis?.cancel();
+      return !v;
+    });
+  }
+
+  function toggleListen() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    if (listening) {
+      recogRef.current?.stop();
+      return;
+    }
+    const rec = new SR();
+    rec.lang = "en-US";
+    rec.interimResults = false;
+    rec.onstart = () => setListening(true);
+    rec.onend = () => setListening(false);
+    rec.onresult = (e) => {
+      const t = Array.from(e.results).map((r) => r[0].transcript).join(" ");
+      setInput(t);
+      setTimeout(() => send(t), 150); // hands-free: auto-send dictation
+    };
+    recogRef.current = rec;
+    rec.start();
+  }
 
   async function send(text) {
     const msg = (text || input).trim();
@@ -86,6 +128,7 @@ export default function AICoach() {
     try {
       const { reply } = await api.chat(msg, history);
       setMessages((m) => [...m, { role: "assistant", content: reply }]);
+      if (voiceOn) speak(reply);
     } catch {
       setMessages((m) => [
         ...m,
@@ -118,6 +161,16 @@ export default function AICoach() {
           <h1 className="font-bold text-on-surface leading-none">Deadline AI Coach</h1>
           <p className="text-label-md text-primary">Online · has context of your tasks</p>
         </div>
+        <button
+          onClick={toggleVoice}
+          title={voiceOn ? "Voice replies: on" : "Voice replies: off"}
+          aria-label="Toggle voice replies"
+          className={`ml-auto w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
+            voiceOn ? "bg-primary/15 text-primary" : "text-on-surface-variant hover:bg-surface-container-high"
+          }`}
+        >
+          <span className="material-symbols-outlined">{voiceOn ? "volume_up" : "volume_off"}</span>
+        </button>
       </header>
 
       {/* Messages */}
@@ -150,6 +203,18 @@ export default function AICoach() {
       {/* Input */}
       <div className="shrink-0 px-unit-lg py-unit-md border-t border-outline-variant/30 bg-surface sticky bottom-0 md:static">
         <div className="md:max-w-3xl md:mx-auto flex gap-3 items-end">
+          <button
+            onClick={toggleListen}
+            title="Speak your question"
+            aria-label="Voice input"
+            className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all shrink-0 ${
+              listening
+                ? "bg-error/20 text-error animate-pulse"
+                : "bg-surface-container-high text-on-surface-variant hover:text-primary"
+            }`}
+          >
+            <span className="material-symbols-outlined text-xl">{listening ? "stop" : "mic"}</span>
+          </button>
           <div className="flex-1 bg-surface-container-low border border-outline-variant/40 rounded-2xl px-4 py-3 focus-within:border-primary/50 transition-colors">
             <textarea
               ref={inputRef}

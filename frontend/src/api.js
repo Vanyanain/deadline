@@ -70,6 +70,9 @@ export const api = {
   updateTask: (id, updates) =>
     req(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(updates) }),
   deleteTask: (id) => req(`/api/tasks/${id}`, { method: "DELETE" }),
+  kickstart: (id, kind) =>
+    req(`/api/tasks/${id}/kickstart`, { method: "POST", body: JSON.stringify({ kind }) }),
+  whyNow: (id) => req(`/api/tasks/${id}/why`),
 
   approvals: () => req("/api/approvals"),
   resolve: (id, decision) =>

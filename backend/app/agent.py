@@ -290,6 +290,120 @@ async def run_agent(text: str, uid: str) -> AgentResult:
         return AgentResult(tasks=tasks, message=_offline_summary(tasks, reason=reason))
 
 
+def _find_task(uid: str, task_id: str) -> dict | None:
+    for t in store.get_tasks(uid):
+        if t.get("id") == task_id:
+            return t
+    return None
+
+
+# ---- Kickstart: draft the actual deliverable so the user can just START ------
+
+_KICKSTART_KIND = {
+    "academic": "outline", "work": "email", "finance": "checklist",
+    "health": "checklist", "personal": "steps", "admin": "email",
+}
+
+
+def _kickstart_fallback(task: dict, kind: str) -> str:
+    title = task.get("title", "this task")
+    if kind == "email":
+        return (f"Subject: Regarding {title}\n\n"
+                f"Hi [name],\n\n"
+                f"I'm writing about {title}. [State your purpose in one sentence.]\n\n"
+                f"[Add the key detail, question, or request here.]\n\n"
+                f"Thank you for your time,\n[Your name]")
+    if kind == "outline":
+        return (f"Outline — {title}\n\n"
+                f"1. Introduction — frame the problem and your goal.\n"
+                f"2. Main point A — [your strongest argument/section].\n"
+                f"3. Main point B — [supporting evidence/detail].\n"
+                f"4. Main point C — [analysis or example].\n"
+                f"5. Conclusion — recap + the takeaway.\n\n"
+                f"▶ First action: spend 15 minutes filling in section 1.")
+    if kind == "checklist":
+        return (f"Checklist — {title}\n\n"
+                f"☐ Gather what you need (details, login, amount, documents)\n"
+                f"☐ Do the core action\n"
+                f"☐ Confirm it's done (receipt / confirmation)\n"
+                f"☐ Record the date completed\n\n"
+                f"▶ Tick the first box now — it takes 2 minutes.")
+    return (f"How to finish: {title}\n\n"
+            f"Step 1 — Break it into the smallest possible first action.\n"
+            f"Step 2 — Do that one action right now (5 minutes).\n"
+            f"Step 3 — Keep going while you have momentum.\n\n"
+            f"▶ Starting is the hard part. Just do Step 1.")
+
+
+def kickstart_task(uid: str, task_id: str, kind: str | None = None) -> dict | None:
+    task = _find_task(uid, task_id)
+    if not task:
+        return None
+    kind = kind or _KICKSTART_KIND.get(task.get("category", "personal"), "steps")
+    if not os.getenv("GEMINI_API_KEY"):
+        return {"kind": kind, "draft": _kickstart_fallback(task, kind), "ai": False}
+    try:
+        prompt = (
+            "You help people STOP procrastinating by giving them a real head start.\n"
+            f"Task: {task.get('title')}\n"
+            f"Category: {task.get('category', 'personal')}\n"
+            f"Deadline: {task.get('deadline') or 'none'}\n\n"
+            f"Produce a ready-to-use {kind} for THIS task. Rules:\n"
+            "- outline: 4-6 labelled sections, each with a one-line prompt\n"
+            "- email: a complete ready-to-send email WITH a Subject line\n"
+            "- checklist: 4-6 concrete, specific checkboxes\n"
+            "- steps: 3-5 concrete next actions, smallest first\n"
+            f"Be specific to this task. Return only the {kind}, no preamble."
+        )
+        draft = tools._gemini_generate(prompt).strip()
+        return {"kind": kind, "draft": draft or _kickstart_fallback(task, kind), "ai": bool(draft)}
+    except Exception:
+        return {"kind": kind, "draft": _kickstart_fallback(task, kind), "ai": False}
+
+
+# ---- "Why now?" decision support --------------------------------------------
+
+def _why_fallback(task: dict) -> str:
+    p = task.get("priority", 3)
+    dl = task.get("deadline")
+    stake = "Clearing it frees up mental space for everything else."
+    if dl:
+        try:
+            hrs = (datetime.fromisoformat(dl.replace("Z", "+00:00")).replace(tzinfo=timezone.utc)
+                   - datetime.now(timezone.utc)).total_seconds() / 3600
+            if hrs < 0:
+                stake = "It's already overdue — every hour adds late penalties or lost trust."
+            elif hrs < 24:
+                stake = f"Only ~{int(hrs)}h left; miss this window and it's gone."
+            elif hrs < 72:
+                stake = f"~{max(1, int(hrs // 24))} day(s) out — start now and you avoid a last-minute scramble."
+            else:
+                stake = "There's lead time, but a small start now compounds and removes the dread."
+        except Exception:
+            pass
+    label = {1: "your top priority", 2: "high priority"}.get(p, f"a P{p} task")
+    return f"This is {label}. {stake}"
+
+
+def task_reasoning(uid: str, task_id: str) -> dict | None:
+    task = _find_task(uid, task_id)
+    if not task:
+        return None
+    if not os.getenv("GEMINI_API_KEY"):
+        return {"reasoning": _why_fallback(task), "ai": False}
+    try:
+        prompt = (
+            "In exactly 2 short, direct sentences, tell the user why they should do this task "
+            "NOW and what's concretely at stake if they skip it. No platitudes.\n"
+            f"Task: {task.get('title')} | priority {task.get('priority', 3)} | "
+            f"deadline {task.get('deadline') or 'none'}."
+        )
+        text = _model_plain().generate_content(prompt).text
+        return {"reasoning": (text or "").strip() or _why_fallback(task), "ai": bool(text)}
+    except Exception:
+        return {"reasoning": _why_fallback(task), "ai": False}
+
+
 def chat_agent(message: str, uid: str, history: list[dict]) -> str:
     """Conversational AI coach. Returns the agent's reply text."""
     if not os.getenv("GEMINI_API_KEY"):

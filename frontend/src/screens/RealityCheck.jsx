@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
+import { AnimatePresence } from "framer-motion";
 import { api } from "../api";
+import KickstartModal from "../components/KickstartModal";
 
 const VERDICT = {
   overcommitted: { label: "Overcommitted", icon: "warning", ring: "border-error/40",
@@ -18,23 +20,9 @@ const CAT_COLOR = {
   health: "#3aa676", personal: "#e8773a", admin: "#8b8b9c",
 };
 
-function TriageCard({ task, bucket, onRemoved }) {
-  const [draft, setDraft] = useState(null);
-  const [loading, setLoading] = useState(false);
+function TriageCard({ task, bucket, onKickstart, onRemoved }) {
   const [gone, setGone] = useState(false);
-  const [copied, setCopied] = useState(false);
 
-  async function getDraft(kind) {
-    setLoading(true);
-    try {
-      const r = await api.kickstart(task.id, kind);
-      setDraft(r.draft);
-    } catch {
-      setDraft("Couldn't generate that right now. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
   async function remove() {
     setGone(true);
     try { await api.deleteTask(task.id); onRemoved?.(); } catch {}
@@ -43,10 +31,10 @@ function TriageCard({ task, bucket, onRemoved }) {
 
   const action =
     bucket === "defer"
-      ? { label: "Draft extension", icon: "mail", run: () => getDraft("email") }
+      ? { label: "Draft extension", icon: "mail", run: () => onKickstart(task, "email") }
       : bucket === "drop"
       ? { label: "Remove", icon: "delete", run: remove, danger: true }
-      : { label: "Kickstart", icon: "bolt", run: () => getDraft(null) };
+      : { label: "Kickstart", icon: "bolt", run: () => onKickstart(task, null) };
 
   return (
     <div className="bg-surface-container-low border border-outline-variant/30 border-l-[3px] rounded-xl p-unit-md"
@@ -66,44 +54,21 @@ function TriageCard({ task, bucket, onRemoved }) {
         </div>
         <button
           onClick={action.run}
-          disabled={loading}
-          className={`shrink-0 px-3 py-2 rounded-lg text-label-md font-bold flex items-center gap-1 transition-all active:scale-95 disabled:opacity-50 ${
+          className={`shrink-0 px-3 py-2 rounded-lg text-label-md font-bold flex items-center gap-1 transition-all active:scale-95 ${
             action.danger
               ? "bg-error/15 text-error hover:bg-error/25"
               : "bg-primary text-on-primary-fixed hover:scale-102"
           }`}
         >
-          <span className={`material-symbols-outlined text-base ${loading ? "animate-spin" : ""}`}>
-            {loading ? "progress_activity" : action.icon}
-          </span>
+          <span className="material-symbols-outlined text-base">{action.icon}</span>
           {action.label}
         </button>
       </div>
-      {draft && (
-        <div className="mt-3 bg-surface-container-lowest border border-outline-variant/30 rounded-lg p-3 animate-fade-in-up">
-          <pre className="whitespace-pre-wrap font-sans text-body-md text-on-surface leading-relaxed">
-            {draft}
-          </pre>
-          <button
-            onClick={() => {
-              navigator.clipboard?.writeText(draft);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            }}
-            className="mt-2 text-label-md text-primary font-bold flex items-center gap-1 hover:opacity-80"
-          >
-            <span className="material-symbols-outlined text-base">
-              {copied ? "check" : "content_copy"}
-            </span>
-            {copied ? "Copied" : "Copy"}
-          </button>
-        </div>
-      )}
     </div>
   );
 }
 
-function Bucket({ title, icon, color, items, bucket, onRemoved }) {
+function Bucket({ title, icon, color, items, bucket, onKickstart, onRemoved }) {
   if (!items?.length) return null;
   return (
     <section className="animate-fade-in-up">
@@ -113,7 +78,7 @@ function Bucket({ title, icon, color, items, bucket, onRemoved }) {
       </h3>
       <div className="flex flex-col gap-unit-sm">
         {items.map((t) => (
-          <TriageCard key={t.id} task={t} bucket={bucket} onRemoved={onRemoved} />
+          <TriageCard key={t.id} task={t} bucket={bucket} onKickstart={onKickstart} onRemoved={onRemoved} />
         ))}
       </div>
     </section>
@@ -123,6 +88,8 @@ function Bucket({ title, icon, color, items, bucket, onRemoved }) {
 export default function RealityCheck() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [kickstart, setKickstart] = useState(null); // { task, kind }
+  const onKickstart = (task, kind) => setKickstart({ task, kind });
 
   const run = useCallback(() => {
     setLoading(true);
@@ -140,6 +107,17 @@ export default function RealityCheck() {
 
   return (
     <main className="p-unit-lg md:p-margin-desktop pb-24 max-w-4xl mx-auto">
+      <AnimatePresence>
+        {kickstart && (
+          <KickstartModal
+            key="rc-kickstart"
+            task={kickstart.task}
+            initialKind={kickstart.kind}
+            onClose={() => setKickstart(null)}
+          />
+        )}
+      </AnimatePresence>
+
       <header className="flex items-start justify-between mb-gutter gap-4 animate-fade-in-up">
         <div>
           <h1 className="font-headline-lg text-headline-lg font-bold tracking-tight">
@@ -212,11 +190,11 @@ export default function RealityCheck() {
           {data.verdict !== "clear" ? (
             <div className="space-y-gutter">
               <Bucket title="Do now" icon="bolt" color="text-primary"
-                items={data.buckets.do_now} bucket="do_now" onRemoved={run} />
+                items={data.buckets.do_now} bucket="do_now" onKickstart={onKickstart} onRemoved={run} />
               <Bucket title="Defer — get an extension" icon="schedule" color="text-warning-amber"
-                items={data.buckets.defer} bucket="defer" onRemoved={run} />
+                items={data.buckets.defer} bucket="defer" onKickstart={onKickstart} onRemoved={run} />
               <Bucket title="Drop or delegate" icon="block" color="text-error"
-                items={data.buckets.drop} bucket="drop" onRemoved={run} />
+                items={data.buckets.drop} bucket="drop" onKickstart={onKickstart} onRemoved={run} />
             </div>
           ) : (
             <div className="border border-outline-variant/40 rounded-2xl p-unit-xl text-center text-on-surface-variant">

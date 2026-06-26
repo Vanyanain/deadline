@@ -12,11 +12,14 @@ const NAV = [
   { to: "/coach", icon: "smart_toy", label: "AI Coach" },
 ];
 
-// On mobile, the bottom bar can't hold every item — show the essentials + profile.
+// Mobile bottom bar — every screen reachable (horizontally scrollable) + profile.
 const MOBILE_NAV = [
   { to: "/", icon: "dashboard", label: "Today", end: true },
   { to: "/braindump", icon: "neurology", label: "Dump" },
+  { to: "/reality-check", icon: "balance", label: "Reality" },
   { to: "/at-risk", icon: "warning", label: "At-Risk" },
+  { to: "/calendar", icon: "calendar_month", label: "Calendar" },
+  { to: "/habits", icon: "target", label: "Habits" },
   { to: "/coach", icon: "smart_toy", label: "Coach" },
   { to: "/profile", icon: "account_circle", label: "Profile" },
 ];
@@ -100,15 +103,15 @@ export default function Layout() {
         <Outlet />
       </div>
 
-      {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 w-full bg-surface border-t border-outline-variant flex justify-around py-2 z-40">
+      {/* Mobile bottom nav — scrolls horizontally so every screen is reachable */}
+      <nav className="md:hidden fixed bottom-0 left-0 w-full bg-surface border-t border-outline-variant flex overflow-x-auto py-2 z-40">
         {MOBILE_NAV.map((n) => (
           <NavLink
             key={n.to}
             to={n.to}
             end={n.end}
             className={({ isActive }) =>
-              `flex flex-col items-center gap-0.5 px-2 ${
+              `flex flex-col items-center gap-0.5 px-4 shrink-0 ${
                 isActive ? "text-primary" : "text-on-surface-variant"
               }`
             }

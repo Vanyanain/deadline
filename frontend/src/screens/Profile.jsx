@@ -29,12 +29,20 @@ function fileToResizedDataURL(file, max = 512, quality = 0.82) {
   });
 }
 
-function StatCard({ label, value, accent = "text-primary" }) {
+function StatCard({ label, value, accent = "text-primary", onClick }) {
   return (
-    <div className="p-4 bg-surface-container-high rounded-xl border border-outline-variant/30">
-      <p className="text-label-md text-on-surface-variant mb-1">{label}</p>
+    <button
+      onClick={onClick}
+      className="group p-4 bg-surface-container-high rounded-xl border border-outline-variant/30 text-left w-full hover:border-primary/40 hover:bg-surface-container-highest transition-colors active:scale-[0.98]"
+    >
+      <p className="text-label-md text-on-surface-variant mb-1 flex items-center justify-between">
+        {label}
+        <span className="material-symbols-outlined text-[15px] opacity-0 group-hover:opacity-70 transition-opacity">
+          arrow_outward
+        </span>
+      </p>
       <p className={`text-headline-md font-bold ${accent}`}>{value}</p>
-    </div>
+    </button>
   );
 }
 
@@ -207,7 +215,7 @@ export default function Profile() {
       </AnimatePresence>
 
       {/* Profile header */}
-      <header className="mb-unit-xl flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <header className="mb-unit-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-6">
           <div className="relative group shrink-0">
             <div
@@ -304,7 +312,7 @@ export default function Profile() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
         {/* Account settings */}
         <section className="lg:col-span-7 flex flex-col gap-gutter">
-          <div className="glass-panel border border-outline-variant/40 p-unit-lg rounded-2xl">
+          <div className="glass-panel border border-outline-variant/40 p-unit-lg rounded-2xl h-full">
             <h3 className="font-headline-md text-headline-md mb-6 flex items-center gap-2">
               <span className="material-symbols-outlined text-primary">settings</span>
               Account Settings
@@ -369,18 +377,18 @@ export default function Profile() {
           </div>
         </section>
 
-        {/* Stats + subscription */}
+        {/* Focus statistics */}
         <aside className="lg:col-span-5 flex flex-col gap-gutter">
-          <div className="glass-panel border border-outline-variant/40 p-unit-lg rounded-2xl relative overflow-hidden">
+          <div className="glass-panel border border-outline-variant/40 p-unit-lg rounded-2xl relative overflow-hidden h-full">
             <h3 className="font-headline-md text-headline-md mb-6 flex items-center gap-2">
               <span className="material-symbols-outlined text-secondary">analytics</span>
               Focus Statistics
             </h3>
             <div className="grid grid-cols-2 gap-4 mb-6">
-              <StatCard label="Tasks Completed" value={done} />
-              <StatCard label="Best Streak" value={`${bestStreak}d`} accent="text-secondary" />
-              <StatCard label="Active Tasks" value={active} />
-              <StatCard label="Habits Tracked" value={habits.length} accent="text-tertiary" />
+              <StatCard label="Tasks Completed" value={done} onClick={() => navigate("/")} />
+              <StatCard label="Best Streak" value={`${bestStreak}d`} accent="text-secondary" onClick={() => navigate("/habits")} />
+              <StatCard label="Active Tasks" value={active} onClick={() => navigate("/")} />
+              <StatCard label="Habits Tracked" value={habits.length} accent="text-tertiary" onClick={() => navigate("/habits")} />
             </div>
 
             <div className="space-y-5">

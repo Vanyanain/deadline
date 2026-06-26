@@ -16,7 +16,7 @@ import secrets
 
 from .agent import (
     run_agent, tick, chat_agent, smart_suggest, AgentResult,
-    kickstart_task, task_reasoning, reality_check,
+    kickstart_task, task_reasoning, reality_check, unblock_task,
 )
 from .auth import (
     verify_token, verify_token_or_cron,
@@ -224,6 +224,18 @@ def why_now(task_id: str, uid: str = Depends(verify_token)):
 @app.get("/api/reality-check")
 def reality_check_endpoint(uid: str = Depends(verify_token)):
     return reality_check(uid)
+
+
+class UnblockRequest(BaseModel):
+    block: Optional[str] = None  # too_big | vague | unclear_start | fear | boring
+
+
+@app.post("/api/tasks/{task_id}/unblock")
+def unblock(task_id: str, req: UnblockRequest, uid: str = Depends(verify_token)):
+    res = unblock_task(uid, task_id, req.block or "unclear_start")
+    if not res:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return res
 
 
 # ---------- approvals --------------------------------------------------------

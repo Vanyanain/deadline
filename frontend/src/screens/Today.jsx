@@ -5,6 +5,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import TiltCard from "../components/TiltCard";
 import KickstartModal from "../components/KickstartModal";
+import UnblockModal from "../components/UnblockModal";
 
 const CAT_COLOR = {
   academic: "#7c7ff0",
@@ -202,6 +203,7 @@ export default function Today() {
   const [err, setErr] = useState("");
   const [editTask, setEditTask] = useState(null);
   const [kickstartTask, setKickstartTask] = useState(null);
+  const [unblockTask, setUnblockTask] = useState(null);
   const [why, setWhy] = useState(null);
   const [whyLoading, setWhyLoading] = useState(false);
   const [suggest, setSuggest] = useState(null);
@@ -305,6 +307,11 @@ export default function Today() {
             task={kickstartTask}
             onClose={() => setKickstartTask(null)}
           />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {unblockTask && (
+          <UnblockModal key="unblock" task={unblockTask} onClose={() => setUnblockTask(null)} />
         )}
       </AnimatePresence>
 
@@ -451,6 +458,13 @@ export default function Today() {
                 </span>
                 {why ? "Hide" : "Why now?"}
               </button>
+              <button
+                onClick={() => setUnblockTask(hero)}
+                className="px-4 py-2.5 rounded-xl text-on-surface-variant border border-outline-variant/50 hover:bg-surface-container-high hover:text-on-surface font-bold flex items-center gap-2 transition-colors"
+              >
+                <span className="material-symbols-outlined text-base">lock_open</span>
+                I'm stuck
+              </button>
             </div>
 
             {why && (
@@ -522,6 +536,13 @@ export default function Today() {
                 title="Kickstart — draft this for me"
               >
                 <span className="material-symbols-outlined text-sm">bolt</span>
+              </button>
+              <button
+                onClick={() => setUnblockTask(t)}
+                className="opacity-0 group-hover:opacity-100 w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-all"
+                title="I'm stuck — unblock me"
+              >
+                <span className="material-symbols-outlined text-sm">lock_open</span>
               </button>
               <button
                 onClick={() => setEditTask(t)}

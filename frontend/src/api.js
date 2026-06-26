@@ -73,6 +73,8 @@ export const api = {
   kickstart: (id, kind) =>
     req(`/api/tasks/${id}/kickstart`, { method: "POST", body: JSON.stringify({ kind }) }),
   whyNow: (id) => req(`/api/tasks/${id}/why`),
+  unblock: (id, block) =>
+    req(`/api/tasks/${id}/unblock`, { method: "POST", body: JSON.stringify({ block }) }),
   realityCheck: () => req("/api/reality-check"),
 
   approvals: () => req("/api/approvals"),

@@ -405,6 +405,85 @@ def task_reasoning(uid: str, task_id: str) -> dict | None:
         return {"reasoning": _why_fallback(task), "ai": False}
 
 
+# ---- Unblock: diagnose procrastination and give the first 5-minute step -----
+
+_BLOCK_DESC = {
+    "too_big": "it feels too big or overwhelming",
+    "vague": "it's vague — they're not sure what it actually involves",
+    "unclear_start": "they don't know where to start",
+    "fear": "they're afraid of doing it badly / perfectionism",
+    "boring": "it's boring and they just don't feel like it",
+}
+_BLOCK_LABEL = {
+    "too_big": "It feels too big",
+    "vague": "It's vague",
+    "unclear_start": "Don't know where to start",
+    "fear": "Worried I'll do it badly",
+    "boring": "It's just boring",
+}
+
+
+def _unblock_fallback(task: dict, block: str) -> dict:
+    title = task.get("title", "this")
+    table = {
+        "too_big": (
+            "Big tasks freeze us because the brain can't see the finish line. You don't have to do the whole thing — just the next inch.",
+            f'Open whatever you\'ll work in and add ONE rough bullet toward "{title}". You\'re allowed to stop there.',
+        ),
+        "vague": (
+            "Vague tasks are almost impossible to start — there's nothing concrete to grab onto. Let's make it real first.",
+            f'Write one sentence: "Done looks like ___" for "{title}". That sentence is your whole job right now.',
+        ),
+        "unclear_start": (
+            "Not knowing step one is the most common reason a task stalls — that's not laziness, it's a missing entry point.",
+            f'Spend 5 minutes listing the 3 sub-steps "{title}" would take. Just the list — don\'t do them yet.',
+        ),
+        "fear": (
+            "That's perfectionism wearing a procrastination mask. Your job right now is a BAD first version, not a good one.",
+            f'Set a 5-minute timer and make the worst possible draft of "{title}". You can fix a bad draft — you can\'t fix a blank page.',
+        ),
+        "boring": (
+            "Boring tasks run on momentum, not motivation. Make it tiny and time-boxed and the resistance drops.",
+            f'Do just 5 minutes of "{title}" with a timer running. When it rings, you have full permission to stop.',
+        ),
+    }
+    msg, step = table.get(block, table["unclear_start"])
+    return {"message": msg, "first_step": step}
+
+
+def unblock_task(uid: str, task_id: str, block: str) -> dict | None:
+    task = _find_task(uid, task_id)
+    if not task:
+        return None
+    block = block if block in _BLOCK_DESC else "unclear_start"
+    label = _BLOCK_LABEL[block]
+    if os.getenv("GEMINI_API_KEY"):
+        try:
+            prompt = (
+                "You're a warm, no-nonsense coach who deeply understands procrastination and "
+                "executive dysfunction. The user keeps avoiding this task:\n"
+                f'  "{task.get("title")}"\n'
+                f"Their block: {_BLOCK_DESC[block]}.\n"
+                "Reply in EXACTLY two lines, nothing else:\n"
+                "REFRAME: <2 sentences naming what's really going on and reframing it — warm, direct, no platitudes>\n"
+                "STEP: <one concrete action they can finish in under 5 minutes, specific to THIS task>"
+            )
+            text = _model_plain().generate_content(prompt).text or ""
+            msg = step = None
+            for line in text.splitlines():
+                s = line.strip()
+                if s.upper().startswith("REFRAME:"):
+                    msg = s.split(":", 1)[1].strip()
+                elif s.upper().startswith("STEP:"):
+                    step = s.split(":", 1)[1].strip()
+            if msg and step:
+                return {"block": block, "block_label": label, "message": msg,
+                        "first_step": step, "ai": True}
+        except Exception:
+            pass
+    return {"block": block, "block_label": label, **_unblock_fallback(task, block), "ai": False}
+
+
 # ---- Reality Check: the honest capacity + triage engine ---------------------
 # The signature feature. Most tools optimistically schedule everything; this
 # does the brutal math and decides what to DO, DEFER, and DROP.

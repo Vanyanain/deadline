@@ -76,8 +76,12 @@ export default function Layout() {
             }`
           }
         >
-          <div className="w-9 h-9 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-xs">
-            {initial}
+          <div className="w-9 h-9 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-xs overflow-hidden shrink-0">
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+            ) : (
+              initial
+            )}
           </div>
           <div className="min-w-0">
             <div className="text-xs font-bold text-on-surface truncate">

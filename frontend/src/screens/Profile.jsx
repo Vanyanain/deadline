@@ -1,7 +1,32 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
+
+// Resize + compress an image file into a small JPEG data URL (kept compact so
+// it stores cleanly in the user record — no cloud bucket needed).
+function fileToResizedDataURL(file, max = 256, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 function StatCard({ label, value, accent = "text-primary" }) {
   return (
@@ -41,6 +66,8 @@ export default function Profile() {
   const [nameDraft, setNameDraft] = useState(user?.name || "");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const fileRef = useRef(null);
 
   const settings = user?.settings || { daily_report: true, at_risk_alerts: true };
 
@@ -93,6 +120,40 @@ export default function Profile() {
     navigate("/login", { replace: true });
   }
 
+  async function onPickPhoto(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      flash("Please choose an image file");
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const dataUrl = await fileToResizedDataURL(file);
+      const { user: updated } = await api.updateProfile({ avatar_url: dataUrl });
+      patchUser(updated);
+      flash("Photo updated");
+    } catch {
+      flash("Couldn't update photo");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
+  async function removePhoto() {
+    setUploadingPhoto(true);
+    try {
+      const { user: updated } = await api.updateProfile({ avatar_url: "" });
+      patchUser({ ...updated, avatar_url: "" });
+      flash("Photo removed");
+    } catch {
+      flash("Couldn't remove photo");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
   // ---- real stats -----------------------------------------------------------
   const done = tasks.filter((t) => t.status === "done").length;
   const active = tasks.filter((t) => t.status !== "done").length;
@@ -115,8 +176,43 @@ export default function Profile() {
       {/* Profile header */}
       <header className="mb-unit-xl flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="flex items-center gap-6">
-          <div className="w-24 h-24 md:w-28 md:h-28 rounded-full border-4 border-primary/20 bg-primary-container flex items-center justify-center text-on-primary-container text-5xl font-black">
-            {initial}
+          <div className="relative group shrink-0">
+            <div className="w-24 h-24 md:w-28 md:h-28 rounded-full border-4 border-primary/20 bg-primary-container flex items-center justify-center text-on-primary-container text-5xl font-black overflow-hidden">
+              {user?.avatar_url ? (
+                <img src={user.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                initial
+              )}
+              {uploadingPhoto && (
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                  <span className="w-6 h-6 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploadingPhoto}
+              title="Change photo"
+              className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-primary text-on-primary-fixed flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition-transform border-2 border-surface disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-base">photo_camera</span>
+            </button>
+            {user?.avatar_url && !uploadingPhoto && (
+              <button
+                onClick={removePhoto}
+                title="Remove photo"
+                className="absolute top-0 right-0 w-7 h-7 rounded-full bg-surface-container-highest text-error flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-opacity border-2 border-surface hover:bg-error/20"
+              >
+                <span className="material-symbols-outlined text-sm">close</span>
+              </button>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              onChange={onPickPhoto}
+              className="hidden"
+            />
           </div>
           <div>
             <div className="flex items-center gap-3 mb-1">

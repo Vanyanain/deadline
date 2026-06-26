@@ -10,6 +10,7 @@ sense -> plan -> act -> observe -> replan cycle driven by Gemini function-callin
 from __future__ import annotations
 
 import os
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -402,6 +403,143 @@ def task_reasoning(uid: str, task_id: str) -> dict | None:
         return {"reasoning": (text or "").strip() or _why_fallback(task), "ai": bool(text)}
     except Exception:
         return {"reasoning": _why_fallback(task), "ai": False}
+
+
+# ---- Reality Check: the honest capacity + triage engine ---------------------
+# The signature feature. Most tools optimistically schedule everything; this
+# does the brutal math and decides what to DO, DEFER, and DROP.
+
+PRODUCTIVE_HOURS_PER_DAY = 4.0  # realistic discretionary focus time, not 24h
+REALITY_HORIZON_DAYS = 7
+
+
+def _parse_deadline(s: str | None):
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+    except Exception:
+        return None
+
+
+def _fmt_due(dt, now) -> str:
+    hrs = (dt - now).total_seconds() / 3600
+    if hrs < 0:
+        return "overdue"
+    if hrs < 24:
+        return f"in {max(1, int(hrs))}h"
+    days = int(hrs // 24)
+    return "tomorrow" if days == 1 else f"in {days}d"
+
+
+def _reality_reason(bucket: str, t: dict, dt, now) -> str:
+    p = t.get("priority", 3)
+    eff = t.get("effort_minutes") or 60
+    due = _fmt_due(dt, now)
+    if bucket == "do_now":
+        return f"~{eff} min, due {due}. It fits your time — get it done."
+    if bucket == "defer":
+        return f"P{p} and won't fit before it's due ({due}). Too important to drop — buy time with an extension."
+    return f"P{p}, lowest priority and over capacity. Delegate it, simplify it, or let it go."
+
+
+def _slim_task(t: dict, bucket: str, dt, now) -> dict:
+    return {
+        "id": t.get("id"), "title": t.get("title"), "priority": t.get("priority", 3),
+        "category": t.get("category", "personal"), "effort_minutes": t.get("effort_minutes"),
+        "deadline": t.get("deadline"), "reason": _reality_reason(bucket, t, dt, now),
+    }
+
+
+def reality_check(uid: str) -> dict:
+    now = datetime.now(timezone.utc)
+    horizon = now + timedelta(days=REALITY_HORIZON_DAYS)
+    active = [t for t in store.get_tasks(uid) if t.get("status") != "done"]
+
+    dated = []
+    for t in active:
+        dt = _parse_deadline(t.get("deadline"))
+        if dt and dt <= horizon:
+            dated.append((t, dt))
+
+    if not dated:
+        return {
+            "verdict": "clear",
+            "headline": "Nothing due in the next 7 days.",
+            "hours_needed": 0, "hours_available": 0, "horizon_days": REALITY_HORIZON_DAYS,
+            "summary": "You're clear for the week — no deadlines bearing down. Brain-dump what's next to stay ahead of it.",
+            "buckets": {"do_now": [], "defer": [], "drop": []}, "ai": False,
+        }
+
+    productive_ratio = PRODUCTIVE_HOURS_PER_DAY / 24.0
+    window_end = max(dt for _, dt in dated)
+    days_span = max(1, math.ceil((window_end - now).total_seconds() / 86400))
+
+    # Earliest-deadline-first feasibility: each task must finish before ITS OWN
+    # deadline given ~4 focus hours/day and the tasks queued ahead of it.
+    ordered = sorted(dated, key=lambda x: (x[1], x[0].get("priority", 3)))
+    do_now, defer, drop = [], [], []
+    clock = now
+    for t, dt in ordered:
+        eff_h = (t.get("effort_minutes") or 60) / 60.0
+        avail_h = max(0.0, (dt - clock).total_seconds() / 3600.0) * productive_ratio
+        if eff_h <= avail_h + 1e-6:
+            do_now.append(_slim_task(t, "do_now", dt, now))
+            clock += timedelta(hours=eff_h / productive_ratio)  # consume focus time
+        elif t.get("priority", 3) <= 2:
+            defer.append(_slim_task(t, "defer", dt, now))
+        else:
+            drop.append(_slim_task(t, "drop", dt, now))
+
+    needed = round(sum((t.get("effort_minutes") or 60) for t, _ in dated) / 60.0, 1)
+    scheduled = round(sum((d["effort_minutes"] or 60) for d in do_now) / 60.0, 1)
+    at_risk = round(max(0.0, needed - scheduled), 1)
+    n_risk = len(defer) + len(drop)
+
+    if at_risk <= 0.01:
+        verdict = "on_track"
+    elif at_risk <= 0.3 * needed:
+        verdict = "tight"
+    else:
+        verdict = "overcommitted"
+
+    if verdict == "on_track":
+        headline = f"All {len(do_now)} tasks fit — about {needed}h of work, and the time to do it."
+    else:
+        headline = f"{n_risk} task(s) won't fit in time — ~{at_risk}h of work has nowhere to go."
+
+    summaries = {
+        "overcommitted": f"Hard truth: ~{at_risk}h of work can't fit before its deadline at ~{PRODUCTIVE_HOURS_PER_DAY:.0f} focus hours a day. You can't do it all — defer what matters, drop what doesn't.",
+        "tight": f"It's tight — ~{scheduled}h fits but ~{at_risk}h is at risk. Guard your focus time and move now.",
+        "on_track": f"You're clear to execute: ~{needed}h of work and the time to do it. Here's the order.",
+    }
+    summary = summaries.get(verdict, "")
+    ai_used = False
+    if os.getenv("GEMINI_API_KEY"):
+        try:
+            prompt = (
+                "Write a punchy, honest 2-sentence reality check for someone's workload. "
+                "Direct, a little tough-love, not preachy. No lists, no preamble.\n"
+                f"Verdict: {verdict}. ~{needed}h of work is due soon; about ~{scheduled}h realistically "
+                f"fits and ~{at_risk}h risks being missed."
+            )
+            txt = (_model_plain().generate_content(prompt).text or "").strip()
+            if txt:
+                summary, ai_used = txt, True
+        except Exception:
+            pass
+
+    return {
+        "verdict": verdict,
+        "headline": headline,
+        "hours_needed": needed, "hours_available": scheduled,
+        "hours_scheduled": scheduled, "hours_at_risk": at_risk,
+        "horizon_days": days_span,
+        "summary": summary,
+        "buckets": {"do_now": do_now, "defer": defer, "drop": drop},
+        "ai": ai_used,
+    }
 
 
 def chat_agent(message: str, uid: str, history: list[dict]) -> str:

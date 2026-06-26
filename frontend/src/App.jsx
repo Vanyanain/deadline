@@ -4,6 +4,7 @@ import Layout from "./Layout";
 import Login from "./screens/Login";
 import Today from "./screens/Today";
 import BrainDump from "./screens/BrainDump";
+import RealityCheck from "./screens/RealityCheck";
 import AtRisk from "./screens/AtRisk";
 import Calendar from "./screens/Calendar";
 import Habits from "./screens/Habits";
@@ -41,6 +42,7 @@ export default function App() {
           >
             <Route index element={<Today />} />
             <Route path="braindump" element={<BrainDump />} />
+            <Route path="reality-check" element={<RealityCheck />} />
             <Route path="at-risk" element={<AtRisk />} />
             <Route path="calendar" element={<Calendar />} />
             <Route path="habits" element={<Habits />} />

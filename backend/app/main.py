@@ -16,7 +16,7 @@ import secrets
 
 from .agent import (
     run_agent, tick, chat_agent, smart_suggest, AgentResult,
-    kickstart_task, task_reasoning,
+    kickstart_task, task_reasoning, reality_check,
 )
 from .auth import (
     verify_token, verify_token_or_cron,
@@ -219,6 +219,11 @@ def why_now(task_id: str, uid: str = Depends(verify_token)):
     if not res:
         raise HTTPException(status_code=404, detail="Task not found")
     return res
+
+
+@app.get("/api/reality-check")
+def reality_check_endpoint(uid: str = Depends(verify_token)):
+    return reality_check(uid)
 
 
 # ---------- approvals --------------------------------------------------------

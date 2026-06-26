@@ -5,6 +5,7 @@ import ThemeToggle from "./components/ThemeToggle";
 const NAV = [
   { to: "/", icon: "dashboard", label: "Today", end: true },
   { to: "/braindump", icon: "neurology", label: "Brain-dump" },
+  { to: "/reality-check", icon: "balance", label: "Reality Check" },
   { to: "/at-risk", icon: "warning", label: "At-Risk" },
   { to: "/calendar", icon: "calendar_month", label: "Calendar" },
   { to: "/habits", icon: "target", label: "Habits" },

@@ -294,7 +294,7 @@ function KickstartModal({ task, onClose }) {
   );
 }
 
-function StatCard({ icon, label, value, tone, delay }) {
+function StatCard({ icon, label, value, tone, delay, onClick, active }) {
   const tones = {
     primary: "text-primary bg-primary/10",
     error: "text-error bg-error/10",
@@ -305,14 +305,25 @@ function StatCard({ icon, label, value, tone, delay }) {
     <div className="animate-fade-in-up h-full" style={{ animationDelay: `${delay}ms` }}>
       <TiltCard
         max={10}
-        className="bg-surface-container-low border border-outline-variant/40 rounded-2xl p-unit-md flex items-center gap-3 h-full hover:border-primary/30"
+        onClick={onClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onClick?.()}
+        className={`bg-surface-container-low border rounded-2xl p-unit-md flex items-center gap-3 h-full cursor-pointer transition-colors ${
+          active
+            ? "border-primary ring-1 ring-primary/40 bg-primary/5"
+            : "border-outline-variant/40 hover:border-primary/40"
+        }`}
       >
         <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${tones[tone]}`}>
           <span className="material-symbols-outlined">{icon}</span>
         </div>
         <div className="min-w-0">
           <div className="text-headline-md font-bold text-on-surface leading-none">{value}</div>
-          <div className="text-label-md text-on-surface-variant mt-1 truncate">{label}</div>
+          <div className="text-label-md text-on-surface-variant mt-1 truncate flex items-center gap-1">
+            {label}
+            {active && <span className="material-symbols-outlined text-[14px] text-primary">filter_alt</span>}
+          </div>
         </div>
       </TiltCard>
     </div>
@@ -328,6 +339,7 @@ export default function Today() {
   const [why, setWhy] = useState(null);
   const [whyLoading, setWhyLoading] = useState(false);
   const [suggest, setSuggest] = useState(null);
+  const [filter, setFilter] = useState(null); // null | today | overdue | week | done
 
   const loadTasks = useCallback(() => {
     api.tasks().then(({ tasks }) => setTasks(tasks || [])).catch(() => setErr("Couldn't load tasks."));
@@ -385,20 +397,31 @@ export default function Today() {
 
   const active = tasks.filter((t) => t.status !== "done");
   const done = tasks.filter((t) => t.status === "done");
-  const sorted = [...active].sort((a, b) => (a.priority ?? 5) - (b.priority ?? 5));
-  const hero = sorted[0];
-  const rest = sorted.slice(1);
-
-  // ---- live dashboard stats ----
+  // ---- live dashboard stats + click-to-filter ----
   const now = new Date();
   const endOfToday = new Date(now);
   endOfToday.setHours(23, 59, 59, 999);
   const in7d = new Date(now.getTime() + 7 * 24 * 36e5);
-  const withDeadline = active.filter((t) => t.deadline);
-  const dueToday = withDeadline.filter((t) => new Date(t.deadline) <= endOfToday).length;
-  const overdue = withDeadline.filter((t) => new Date(t.deadline) < now).length;
-  const dueWeek = withDeadline.filter((t) => new Date(t.deadline) <= in7d).length;
+
+  const FILTER_TEST = {
+    today: (t) => t.status !== "done" && t.deadline && new Date(t.deadline) <= endOfToday,
+    overdue: (t) => t.status !== "done" && t.deadline && new Date(t.deadline) < now,
+    week: (t) => t.status !== "done" && t.deadline && new Date(t.deadline) <= in7d,
+    done: (t) => t.status === "done",
+  };
+  const FILTER_LABEL = { today: "Due today", overdue: "Overdue", week: "Due this week", done: "Completed" };
+
+  const dueToday = tasks.filter(FILTER_TEST.today).length;
+  const overdue = tasks.filter(FILTER_TEST.overdue).length;
+  const dueWeek = tasks.filter(FILTER_TEST.week).length;
   const completionRate = tasks.length ? Math.round((done.length / tasks.length) * 100) : 0;
+
+  const byPriority = (a, b) => (a.priority ?? 5) - (b.priority ?? 5);
+  const sorted = [...active].sort(byPriority);
+  const filteredList = filter ? tasks.filter(FILTER_TEST[filter]).sort(byPriority) : null;
+  const hero = filter ? null : sorted[0];
+  const rest = filter ? filteredList : sorted.slice(1);
+  const toggleFilter = (f) => setFilter((cur) => (cur === f ? null : f));
 
   const hour = now.getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -444,12 +467,16 @@ export default function Today() {
         </Link>
       </header>
 
-      {/* Stats strip */}
+      {/* Stats strip — click to filter the list below */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-unit-md mb-gutter">
-        <StatCard icon="today" label="Due today" value={dueToday} tone="primary" delay={0} />
-        <StatCard icon="warning" label="Overdue" value={overdue} tone="error" delay={60} />
-        <StatCard icon="calendar_month" label="Due this week" value={dueWeek} tone="amber" delay={120} />
-        <StatCard icon="task_alt" label="Completion" value={`${completionRate}%`} tone="tertiary" delay={180} />
+        <StatCard icon="today" label="Due today" value={dueToday} tone="primary" delay={0}
+          active={filter === "today"} onClick={() => toggleFilter("today")} />
+        <StatCard icon="warning" label="Overdue" value={overdue} tone="error" delay={60}
+          active={filter === "overdue"} onClick={() => toggleFilter("overdue")} />
+        <StatCard icon="calendar_month" label="Due this week" value={dueWeek} tone="amber" delay={120}
+          active={filter === "week"} onClick={() => toggleFilter("week")} />
+        <StatCard icon="task_alt" label="Completion" value={`${completionRate}%`} tone="tertiary" delay={180}
+          active={filter === "done"} onClick={() => toggleFilter("done")} />
       </section>
 
       {err && <p className="text-error mb-unit-md">{err}</p>}
@@ -572,9 +599,19 @@ export default function Today() {
         </TiltCard>
       )}
 
-      <h3 className="text-label-md uppercase tracking-widest text-on-surface-variant font-bold mb-unit-md">
-        Prioritized
-      </h3>
+      <div className="flex items-center justify-between mb-unit-md">
+        <h3 className="text-label-md uppercase tracking-widest text-on-surface-variant font-bold flex items-center gap-2">
+          {filter ? `${FILTER_LABEL[filter]} · ${rest.length}` : "Prioritized"}
+        </h3>
+        {filter && (
+          <button
+            onClick={() => setFilter(null)}
+            className="text-label-md text-primary font-bold flex items-center gap-1 hover:opacity-80"
+          >
+            <span className="material-symbols-outlined text-base">close</span> Clear filter
+          </button>
+        )}
+      </div>
       <motion.div layout className="flex flex-col gap-unit-sm">
         <AnimatePresence initial={false}>
         {rest.map((t) => (
@@ -639,18 +676,24 @@ export default function Today() {
         ))}
         </AnimatePresence>
 
-        {sorted.length === 0 && !err && (
+        {(filter ? rest.length === 0 : sorted.length === 0) && !err && (
           <div className="border border-outline-variant/40 rounded-2xl p-unit-xl text-center text-on-surface-variant">
-            Nothing planned yet.{" "}
-            <Link to="/braindump" className="text-primary font-bold">
-              Brain-dump your tasks
-            </Link>{" "}
-            to begin.
+            {filter ? (
+              `No tasks ${FILTER_LABEL[filter].toLowerCase()}.`
+            ) : (
+              <>
+                Nothing planned yet.{" "}
+                <Link to="/braindump" className="text-primary font-bold">
+                  Brain-dump your tasks
+                </Link>{" "}
+                to begin.
+              </>
+            )}
           </div>
         )}
       </motion.div>
 
-      {done.length > 0 && (
+      {!filter && done.length > 0 && (
         <section className="mt-gutter">
           <h3 className="text-label-md uppercase tracking-widest text-on-surface-variant font-bold mb-unit-md">
             Completed ({done.length})

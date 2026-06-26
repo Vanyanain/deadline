@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 
+// Local-time YYYY-MM-DD (NOT UTC) so "today" matches the user's actual day.
+function localDate(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
 const PRESET_HABITS = [
   { name: "Deep work (2h)", icon: "work", color: "#8083ff" },
   { name: "Exercise", icon: "fitness_center", color: "#7ee0a0" },
@@ -44,7 +51,7 @@ export default function Habits() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = localDate();
 
   async function loadHabits() {
     try {
@@ -61,7 +68,7 @@ export default function Habits() {
 
   async function checkHabit(id) {
     try {
-      const { habit } = await api.checkHabit(id);
+      const { habit } = await api.checkHabit(id, todayStr);
       setHabits((hs) => hs.map((h) => (h.id === id ? { ...h, ...habit } : h)));
     } catch {
       setErr("Couldn't check habit.");
@@ -277,7 +284,7 @@ export default function Habits() {
                   {Array.from({ length: 7 }, (_, i) => {
                     const d = new Date();
                     d.setDate(d.getDate() - 6 + i);
-                    const ds = d.toISOString().slice(0, 10);
+                    const ds = localDate(d);
                     const done = h.checks?.includes(ds) || false;
                     const isT = ds === todayStr;
                     return (

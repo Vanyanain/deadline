@@ -224,11 +224,14 @@ def delete_habit(uid: str, habit_id: str) -> bool:
     return _delete("habits", uid, habit_id)
 
 
-def compute_streak(checks: list[str]) -> int:
+def compute_streak(checks: list[str], today_str: str | None = None) -> int:
     if not checks:
         return 0
     check_set = set(checks)
-    today = date.today()
+    try:
+        today = date.fromisoformat(today_str) if today_str else date.today()
+    except ValueError:
+        today = date.today()
     streak = 0
     cur = today
     # allow streak to count from yesterday if not yet checked today

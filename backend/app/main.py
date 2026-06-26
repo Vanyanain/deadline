@@ -292,12 +292,20 @@ def create_habit(req: HabitCreate, uid: str = Depends(verify_token)):
     return {"habit": {**habit, "streak": 0}}
 
 
+class HabitCheckRequest(BaseModel):
+    date: Optional[str] = None  # client's local YYYY-MM-DD; defaults to server today
+
+
 @app.post("/api/habits/{habit_id}/check")
-def check_habit(habit_id: str, uid: str = Depends(verify_token)):
-    habit = store.check_habit(uid, habit_id)
+def check_habit(
+    habit_id: str,
+    req: Optional[HabitCheckRequest] = None,
+    uid: str = Depends(verify_token),
+):
+    habit = store.check_habit(uid, habit_id, req.date if req else None)
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
-    return {"habit": {**habit, "streak": store.compute_streak(habit.get("checks", []))}}
+    return {"habit": {**habit, "streak": store.compute_streak(habit.get("checks", []), req.date if req else None)}}
 
 
 @app.delete("/api/habits/{habit_id}")

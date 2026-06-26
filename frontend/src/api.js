@@ -86,7 +86,8 @@ export const api = {
   habits: () => req("/api/habits"),
   createHabit: (data) =>
     req("/api/habits", { method: "POST", body: JSON.stringify(data) }),
-  checkHabit: (id) => req(`/api/habits/${id}/check`, { method: "POST" }),
+  checkHabit: (id, date) =>
+    req(`/api/habits/${id}/check`, { method: "POST", body: JSON.stringify({ date }) }),
   deleteHabit: (id) => req(`/api/habits/${id}`, { method: "DELETE" }),
 
   tick: () => req("/tick", { method: "POST" }),

@@ -168,7 +168,8 @@ export default function Profile() {
   const done = tasks.filter((t) => t.status === "done").length;
   const active = tasks.filter((t) => t.status !== "done").length;
   const bestStreak = habits.reduce((m, h) => Math.max(m, h.streak || 0), 0);
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const _now = new Date();
+  const todayStr = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}`;
   const habitsToday = habits.filter((h) => h.checks?.includes(todayStr)).length;
   const habitPct = habits.length ? Math.round((habitsToday / habits.length) * 100) : 0;
 

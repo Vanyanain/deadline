@@ -88,7 +88,7 @@ export default function Layout() {
               {user?.name || "Account"}
             </div>
             <div className="text-[10px] text-on-surface-variant truncate">
-              {user?.plan || "View profile"}
+              {user?.email || "View profile"}
             </div>
           </div>
         </NavLink>

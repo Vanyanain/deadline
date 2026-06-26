@@ -270,8 +270,8 @@ export default function Profile() {
                 </h1>
               )}
               <span className="px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full font-label-md text-label-md flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px]">verified</span>
-                {(user?.plan || "Free").split(" ")[0].toUpperCase()}
+                <span className="material-symbols-outlined text-[14px]">bolt</span>
+                Active
               </span>
             </div>
             <p className="text-on-surface-variant font-body-lg text-body-lg">
@@ -415,32 +415,6 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* Subscription */}
-          <div className="glass-panel border border-outline-variant/40 p-unit-lg rounded-2xl">
-            <h3 className="font-headline-md text-headline-md mb-6 flex items-center gap-2">
-              <span className="material-symbols-outlined text-tertiary">workspace_premium</span>
-              Subscription
-            </h3>
-            <div className="p-4 bg-surface-container-highest rounded-xl mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-body-md font-bold">{user?.plan || "Free Plan"}</p>
-                <p className="text-label-md text-on-surface-variant">
-                  {user?.plan === "Free Plan" || !user?.plan
-                    ? "All core features included."
-                    : "Thanks for going Pro!"}
-                </p>
-              </div>
-              <span className="text-headline-md font-black text-primary">
-                {user?.plan === "Free Plan" || !user?.plan ? "$0" : "Pro"}
-              </span>
-            </div>
-            <button
-              onClick={() => flash("Billing is not enabled in this demo.")}
-              className="w-full py-3 bg-surface-container border border-outline-variant rounded-xl font-label-md text-label-md hover:bg-surface-bright transition-all"
-            >
-              Manage Plan
-            </button>
-          </div>
         </aside>
       </div>
     </main>

@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import TiltCard from "../components/TiltCard";
 
 const CAT_COLOR = {
   academic: "#7c7ff0",
@@ -199,8 +201,21 @@ function KickstartModal({ task, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface-container border border-outline-variant/40 rounded-2xl p-unit-lg w-full max-w-2xl shadow-2xl animate-fade-in-up max-h-[85vh] flex flex-col">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+        transition={{ type: "spring", stiffness: 320, damping: 28 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-surface-container border border-outline-variant/40 rounded-2xl p-unit-lg w-full max-w-2xl shadow-2xl max-h-[85vh] flex flex-col"
+      >
         <div className="flex items-start justify-between mb-unit-md">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
@@ -274,8 +289,8 @@ function KickstartModal({ task, onClose }) {
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -287,17 +302,19 @@ function StatCard({ icon, label, value, tone, delay }) {
     tertiary: "text-tertiary bg-tertiary/10",
   };
   return (
-    <div
-      className="card-lift animate-fade-in-up bg-surface-container-low border border-outline-variant/40 rounded-2xl p-unit-md flex items-center gap-3"
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${tones[tone]}`}>
-        <span className="material-symbols-outlined">{icon}</span>
-      </div>
-      <div className="min-w-0">
-        <div className="text-headline-md font-bold text-on-surface leading-none">{value}</div>
-        <div className="text-label-md text-on-surface-variant mt-1 truncate">{label}</div>
-      </div>
+    <div className="animate-fade-in-up h-full" style={{ animationDelay: `${delay}ms` }}>
+      <TiltCard
+        max={10}
+        className="bg-surface-container-low border border-outline-variant/40 rounded-2xl p-unit-md flex items-center gap-3 h-full hover:border-primary/30"
+      >
+        <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${tones[tone]}`}>
+          <span className="material-symbols-outlined">{icon}</span>
+        </div>
+        <div className="min-w-0">
+          <div className="text-headline-md font-bold text-on-surface leading-none">{value}</div>
+          <div className="text-label-md text-on-surface-variant mt-1 truncate">{label}</div>
+        </div>
+      </TiltCard>
     </div>
   );
 }
@@ -392,9 +409,15 @@ export default function Today() {
       {editTask && (
         <EditModal task={editTask} onClose={() => setEditTask(null)} onSave={saveEdit} />
       )}
-      {kickstartTask && (
-        <KickstartModal task={kickstartTask} onClose={() => setKickstartTask(null)} />
-      )}
+      <AnimatePresence>
+        {kickstartTask && (
+          <KickstartModal
+            key="kickstart"
+            task={kickstartTask}
+            onClose={() => setKickstartTask(null)}
+          />
+        )}
+      </AnimatePresence>
 
       <header className="flex items-end justify-between mb-gutter gap-4 animate-fade-in-up">
         <div>
@@ -458,7 +481,10 @@ export default function Today() {
       ))}
 
       {hero && (
-        <section className="animate-fade-in-up bg-gradient-to-br from-primary/15 to-surface-container-low border border-primary/20 rounded-2xl p-unit-lg mb-gutter relative overflow-hidden">
+        <TiltCard
+          max={5}
+          className="animate-fade-in bg-gradient-to-br from-primary/15 to-surface-container-low border border-primary/20 rounded-2xl p-unit-lg mb-gutter relative overflow-hidden"
+        >
           <div className="absolute top-0 right-0 w-72 h-72 bg-primary/10 rounded-full blur-[100px] -mr-24 -mt-24 pointer-events-none animate-pulse-slow" />
           <div className="relative">
             <div className="flex items-start justify-between">
@@ -543,17 +569,24 @@ export default function Today() {
               </div>
             )}
           </div>
-        </section>
+        </TiltCard>
       )}
 
       <h3 className="text-label-md uppercase tracking-widest text-on-surface-variant font-bold mb-unit-md">
         Prioritized
       </h3>
-      <div className="flex flex-col gap-unit-sm">
+      <motion.div layout className="flex flex-col gap-unit-sm">
+        <AnimatePresence initial={false}>
         {rest.map((t) => (
-          <article
+          <motion.article
             key={t.id}
-            className="card-lift bg-surface-container-low border border-outline-variant/30 border-l-[3px] rounded-xl px-unit-md py-unit-md flex items-center justify-between group"
+            layout
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, x: -24, transition: { duration: 0.18 } }}
+            transition={{ type: "spring", stiffness: 420, damping: 36 }}
+            whileHover={{ y: -3 }}
+            className="bg-surface-container-low border border-outline-variant/30 border-l-[3px] rounded-xl px-unit-md py-unit-md flex items-center justify-between group"
             style={{ borderLeftColor: CAT_COLOR[t.category] || "#c0c1ff" }}
           >
             <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -602,8 +635,9 @@ export default function Today() {
                 <span className="material-symbols-outlined text-sm">delete</span>
               </button>
             </div>
-          </article>
+          </motion.article>
         ))}
+        </AnimatePresence>
 
         {sorted.length === 0 && !err && (
           <div className="border border-outline-variant/40 rounded-2xl p-unit-xl text-center text-on-surface-variant">
@@ -614,7 +648,7 @@ export default function Today() {
             to begin.
           </div>
         )}
-      </div>
+      </motion.div>
 
       {done.length > 0 && (
         <section className="mt-gutter">

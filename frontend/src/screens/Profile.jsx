@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../api";
 import { useAuth } from "../auth";
 
-// Resize + compress an image file into a small JPEG data URL (kept compact so
-// it stores cleanly in the user record — no cloud bucket needed).
-function fileToResizedDataURL(file, max = 256, quality = 0.82) {
+// Resize + compress an image file into a JPEG data URL (kept compact so it
+// stores cleanly in the user record — no cloud bucket needed).
+function fileToResizedDataURL(file, max = 512, quality = 0.82) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = reject;
@@ -67,6 +68,7 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [viewingPhoto, setViewingPhoto] = useState(false);
   const fileRef = useRef(null);
 
   const settings = user?.settings || { daily_report: true, at_risk_alerts: true };
@@ -173,11 +175,48 @@ export default function Profile() {
         </div>
       )}
 
+      {/* Full-size photo viewer */}
+      <AnimatePresence>
+        {viewingPhoto && user?.avatar_url && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setViewingPhoto(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm"
+          >
+            <motion.img
+              src={user.avatar_url}
+              alt="Profile"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.92 }}
+              transition={{ type: "spring", stiffness: 300, damping: 28 }}
+              className="max-w-[90vw] max-h-[85vh] rounded-2xl shadow-2xl object-contain border border-white/10"
+            />
+            <button
+              onClick={() => setViewingPhoto(false)}
+              className="absolute top-5 right-5 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors backdrop-blur-sm"
+              title="Close"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Profile header */}
       <header className="mb-unit-xl flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="flex items-center gap-6">
           <div className="relative group shrink-0">
-            <div className="w-24 h-24 md:w-28 md:h-28 rounded-full border-4 border-primary/20 bg-primary-container flex items-center justify-center text-on-primary-container text-5xl font-black overflow-hidden">
+            <div
+              onClick={() => user?.avatar_url && setViewingPhoto(true)}
+              title={user?.avatar_url ? "View photo" : undefined}
+              className={`w-24 h-24 md:w-28 md:h-28 rounded-full border-4 border-primary/20 bg-primary-container flex items-center justify-center text-on-primary-container text-5xl font-black overflow-hidden ${
+                user?.avatar_url ? "cursor-pointer" : ""
+              }`}
+            >
               {user?.avatar_url ? (
                 <img src={user.avatar_url} alt="Profile" className="w-full h-full object-cover" />
               ) : (

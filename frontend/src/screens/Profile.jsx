@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import HelpModal from "../components/HelpModal";
 
 // Resize + compress an image file into a JPEG data URL (kept compact so it
 // stores cleanly in the user record — no cloud bucket needed).
@@ -77,6 +78,7 @@ export default function Profile() {
   const [toast, setToast] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [viewingPhoto, setViewingPhoto] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const fileRef = useRef(null);
 
   const settings = user?.settings || { daily_report: true, at_risk_alerts: true };
@@ -184,6 +186,11 @@ export default function Profile() {
         </div>
       )}
 
+      {/* Help / navigation guide */}
+      <AnimatePresence>
+        {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+      </AnimatePresence>
+
       {/* Full-size photo viewer */}
       <AnimatePresence>
         {viewingPhoto && user?.avatar_url && (
@@ -289,6 +296,13 @@ export default function Profile() {
           </div>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={() => setShowHelp(true)}
+            className="px-5 py-2 bg-primary/10 text-primary border border-primary/30 rounded-xl font-label-md text-label-md hover:bg-primary/20 transition-all active:scale-95 flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-base">help</span>
+            Help
+          </button>
           <button
             onClick={() => {
               setNameDraft(user?.name || "");

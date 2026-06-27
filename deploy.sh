@@ -28,6 +28,7 @@ gcloud run deploy "$SERVICE" \
   --region "$REGION" \
   --platform managed \
   --allow-unauthenticated \
+  --quiet \
   --memory 512Mi \
   --min-instances 0 \
   --max-instances 3 \

@@ -73,18 +73,28 @@ def _sanitize(data: dict) -> dict:
     u = dict(data)
     u.setdefault("settings", dict(_DEFAULT_SETTINGS))
     u.pop("password_hash", None)
+    u.pop("security_answer_hash", None)  # never expose the answer hash to clients
+    u["has_security_question"] = bool(u.pop("security_question", None))
     return u
 
 
-def create_user(email, name, password_hash, role="Member", plan="Free Plan") -> dict:
+def create_user(email, name, password_hash, role="Member", plan="Free Plan",
+                security_question=None, security_answer_hash=None) -> dict:
     uid = uuid.uuid4().hex
     doc = {
         "uid": uid, "email": email.lower().strip(), "name": name,
         "password_hash": password_hash, "role": role, "plan": plan,
-        "avatar_url": None, "settings": dict(_DEFAULT_SETTINGS), "created": _now(),
+        "avatar_url": None, "settings": dict(_DEFAULT_SETTINGS),
+        "security_question": security_question,
+        "security_answer_hash": security_answer_hash, "created": _now(),
     }
     _db().collection("users").document(uid).set(doc)
     return _sanitize(doc)
+
+
+def set_password(uid: str, password_hash: str) -> bool:
+    _db().collection("users").document(uid).update({"password_hash": password_hash})
+    return True
 
 
 def get_user_by_email(email: str) -> dict | None:

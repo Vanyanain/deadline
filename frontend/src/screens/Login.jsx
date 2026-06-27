@@ -5,6 +5,15 @@ import { api } from "../api";
 import { useTheme } from "../theme";
 import ThemeToggle from "../components/ThemeToggle";
 
+const SECURITY_QUESTIONS = [
+  "What city were you born in?",
+  "What was the name of your first pet?",
+  "What is your mother's maiden name?",
+  "What was the name of your primary school?",
+  "What is your favourite book?",
+  "What was your childhood nickname?",
+];
+
 export default function Login() {
   const { login, register, loginWithGoogle } = useAuth();
   const { theme } = useTheme();
@@ -15,11 +24,18 @@ export default function Login() {
   const fallbackTimer = useRef(null);
   const [googleFallback, setGoogleFallback] = useState(false); // show official button if One Tap can't appear
 
-  const [mode, setMode] = useState("signin"); // "signin" | "signup"
+  const [mode, setMode] = useState("signin"); // "signin" | "signup" | "recover"
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
+  // Security question (sign-up) + recovery flow
+  const [securityQuestion, setSecurityQuestion] = useState(SECURITY_QUESTIONS[0]);
+  const [securityAnswer, setSecurityAnswer] = useState("");
+  const [recoverStep, setRecoverStep] = useState(1); // 1 = find account, 2 = answer + new pw
+  const [recoverQuestion, setRecoverQuestion] = useState("");
+  const [recoverAnswer, setRecoverAnswer] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [err, setErr] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
@@ -29,6 +45,7 @@ export default function Login() {
   );
 
   const isSignup = mode === "signup";
+  const isRecover = mode === "recover";
 
   useEffect(() => {
     api
@@ -37,19 +54,78 @@ export default function Login() {
       .catch(() => {});
   }, []);
 
+  function onFormSubmit(e) {
+    if (isRecover) return recoverStep === 1 ? findAccount(e) : doReset(e);
+    return submit(e);
+  }
+
   async function submit(e) {
     e.preventDefault();
     setErr("");
     setBusy(true);
     try {
       if (isSignup) {
-        await register(email, password, name);
+        await register(email, password, name, securityQuestion, securityAnswer);
       } else {
         await login(email, password);
       }
       navigate(from, { replace: true });
     } catch (e2) {
       setErr(e2.message || "Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startRecover() {
+    setMode("recover");
+    setRecoverStep(1);
+    setErr("");
+    setInfo("");
+    setRecoverAnswer("");
+    setNewPassword("");
+  }
+
+  function backToSignIn() {
+    setMode("signin");
+    setRecoverStep(1);
+    setErr("");
+    setInfo("");
+  }
+
+  // Recovery step 1 → look up the account's security question.
+  async function findAccount(e) {
+    e.preventDefault();
+    setErr("");
+    setInfo("");
+    setBusy(true);
+    try {
+      const { question } = await api.securityQuestion(email);
+      if (!question) {
+        setErr("No security question is set for this account. Check the email, or sign in with Google.");
+      } else {
+        setRecoverQuestion(question);
+        setRecoverStep(2);
+      }
+    } catch (e2) {
+      setErr(e2.message || "Couldn't look up that account.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Recovery step 2 → verify the answer, set the new password, then sign in.
+  async function doReset(e) {
+    e.preventDefault();
+    setErr("");
+    setInfo("");
+    setBusy(true);
+    try {
+      await api.resetPassword(email, recoverAnswer, newPassword);
+      await login(email, newPassword);
+      navigate(from, { replace: true });
+    } catch (e2) {
+      setErr(e2.message || "Reset failed. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -157,16 +233,20 @@ export default function Login() {
         <div className="glass-card rounded-2xl p-unit-lg shadow-2xl">
           <div className="mb-unit-lg">
             <h2 className="font-headline-md text-headline-md text-on-surface font-semibold">
-              {isSignup ? "Create Account" : "Sign In"}
+              {isRecover ? "Reset Password" : isSignup ? "Create Account" : "Sign In"}
             </h2>
             <p className="font-body-md text-body-md text-on-surface-variant mt-1">
-              {isSignup
+              {isRecover
+                ? recoverStep === 1
+                  ? "Enter your email to find your account."
+                  : "Answer your security question to set a new password."
+                : isSignup
                 ? "Start beating your deadlines today."
                 : "Welcome back to your focus zone."}
             </p>
           </div>
 
-          <form className="space-y-unit-md" onSubmit={submit}>
+          <form className="space-y-unit-md" onSubmit={onFormSubmit}>
             {isSignup && (
               <div className="space-y-unit-xs">
                 <label className="font-label-md text-label-md text-on-surface-variant ml-1">
@@ -199,7 +279,8 @@ export default function Login() {
                 <input
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3 pl-10 pr-4 text-on-surface placeholder:text-outline/50 focus:outline-none focus:border-primary transition-all duration-200 input-focus-glow font-body-md text-body-md"
+                  disabled={isRecover && recoverStep === 2}
+                  className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3 pl-10 pr-4 text-on-surface placeholder:text-outline/50 focus:outline-none focus:border-primary transition-all duration-200 input-focus-glow font-body-md text-body-md disabled:opacity-60"
                   placeholder="name@company.com"
                   type="email"
                   required
@@ -208,46 +289,158 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Password */}
-            <div className="space-y-unit-xs">
-              <div className="flex justify-between items-center px-1">
-                <label className="font-label-md text-label-md text-on-surface-variant">
+            {/* Password (hidden during recovery) */}
+            {!isRecover && (
+              <div className="space-y-unit-xs">
+                <label className="font-label-md text-label-md text-on-surface-variant ml-1 block">
                   Password
                 </label>
-                {!isSignup && (
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">
+                    lock
+                  </span>
+                  <input
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3 pl-10 pr-11 text-on-surface placeholder:text-outline/50 focus:outline-none focus:border-primary transition-all duration-200 input-focus-glow font-body-md text-body-md"
+                    placeholder={isSignup ? "At least 6 characters" : "••••••••"}
+                    type={showPw ? "text" : "password"}
+                    required
+                    minLength={6}
+                    autoComplete={isSignup ? "new-password" : "current-password"}
+                  />
                   <button
                     type="button"
-                    onClick={() => setInfo("Password reset is coming soon.")}
-                    className="font-label-md text-label-md text-primary hover:underline transition-all"
+                    onClick={() => setShowPw((s) => !s)}
+                    className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-outline text-[20px] hover:text-on-surface transition-colors"
+                    tabIndex={-1}
                   >
-                    Forgot?
+                    {showPw ? "visibility_off" : "visibility"}
                   </button>
+                </div>
+                {/* Forgot? — now below the password */}
+                {!isSignup && (
+                  <div className="text-right pt-1">
+                    <button
+                      type="button"
+                      onClick={startRecover}
+                      className="font-label-md text-label-md text-primary hover:underline transition-all"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
                 )}
               </div>
-              <div className="relative">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">
-                  lock
-                </span>
-                <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3 pl-10 pr-11 text-on-surface placeholder:text-outline/50 focus:outline-none focus:border-primary transition-all duration-200 input-focus-glow font-body-md text-body-md"
-                  placeholder={isSignup ? "At least 6 characters" : "••••••••"}
-                  type={showPw ? "text" : "password"}
-                  required
-                  minLength={6}
-                  autoComplete={isSignup ? "new-password" : "current-password"}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPw((s) => !s)}
-                  className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-outline text-[20px] hover:text-on-surface transition-colors"
-                  tabIndex={-1}
-                >
-                  {showPw ? "visibility_off" : "visibility"}
-                </button>
-              </div>
-            </div>
+            )}
+
+            {/* Security question (sign-up) — saved for future account recovery */}
+            {isSignup && (
+              <>
+                <div className="space-y-unit-xs">
+                  <label className="font-label-md text-label-md text-on-surface-variant ml-1 block">
+                    Security Question
+                  </label>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">
+                      shield
+                    </span>
+                    <select
+                      value={securityQuestion}
+                      onChange={(e) => setSecurityQuestion(e.target.value)}
+                      className="w-full appearance-none bg-surface-container-lowest border border-outline-variant rounded-xl py-3 pl-10 pr-9 text-on-surface focus:outline-none focus:border-primary transition-all duration-200 font-body-md text-body-md"
+                    >
+                      {SECURITY_QUESTIONS.map((q) => (
+                        <option key={q} value={q}>{q}</option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-outline text-[20px] pointer-events-none">
+                      expand_more
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-unit-xs">
+                  <label className="font-label-md text-label-md text-on-surface-variant ml-1 block">
+                    Your Answer
+                  </label>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">
+                      key
+                    </span>
+                    <input
+                      value={securityAnswer}
+                      onChange={(e) => setSecurityAnswer(e.target.value)}
+                      className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3 pl-10 pr-4 text-on-surface placeholder:text-outline/50 focus:outline-none focus:border-primary transition-all duration-200 input-focus-glow font-body-md text-body-md"
+                      placeholder="Used to recover your account later"
+                      type="text"
+                      required
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Recovery step 2 — answer the question + set a new password */}
+            {isRecover && recoverStep === 2 && (
+              <>
+                <div className="space-y-unit-xs">
+                  <label className="font-label-md text-label-md text-on-surface-variant ml-1 block">
+                    Security Question
+                  </label>
+                  <div className="bg-surface-container-lowest border border-outline-variant rounded-xl py-3 px-4 text-on-surface font-body-md text-body-md">
+                    {recoverQuestion}
+                  </div>
+                </div>
+                <div className="space-y-unit-xs">
+                  <label className="font-label-md text-label-md text-on-surface-variant ml-1 block">
+                    Your Answer
+                  </label>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">
+                      key
+                    </span>
+                    <input
+                      value={recoverAnswer}
+                      onChange={(e) => setRecoverAnswer(e.target.value)}
+                      className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3 pl-10 pr-4 text-on-surface placeholder:text-outline/50 focus:outline-none focus:border-primary transition-all duration-200 input-focus-glow font-body-md text-body-md"
+                      placeholder="Your answer"
+                      type="text"
+                      required
+                      autoComplete="off"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+                <div className="space-y-unit-xs">
+                  <label className="font-label-md text-label-md text-on-surface-variant ml-1 block">
+                    New Password
+                  </label>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">
+                      lock
+                    </span>
+                    <input
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3 pl-10 pr-11 text-on-surface placeholder:text-outline/50 focus:outline-none focus:border-primary transition-all duration-200 input-focus-glow font-body-md text-body-md"
+                      placeholder="At least 6 characters"
+                      type={showPw ? "text" : "password"}
+                      required
+                      minLength={6}
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPw((s) => !s)}
+                      className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-outline text-[20px] hover:text-on-surface transition-colors"
+                      tabIndex={-1}
+                    >
+                      {showPw ? "visibility_off" : "visibility"}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
 
             {err && (
               <div className="flex items-start gap-2 text-error bg-error/10 border border-error/20 rounded-xl px-3 py-2 text-label-md">
@@ -275,6 +468,8 @@ export default function Login() {
                 <span className="material-symbols-outlined animate-spin">
                   progress_activity
                 </span>
+              ) : isRecover ? (
+                recoverStep === 1 ? "Find My Account" : "Reset Password"
               ) : isSignup ? (
                 "Create Account"
               ) : (
@@ -283,7 +478,9 @@ export default function Login() {
             </button>
           </form>
 
-          {/* Divider */}
+          {/* Divider + social (hidden during recovery) */}
+          {!isRecover && (
+          <>
           <div className="relative my-unit-lg flex items-center">
             <div className="flex-grow border-t border-outline-variant/30" />
             <span className="px-3 font-label-md text-label-md text-outline-variant uppercase tracking-widest">
@@ -314,20 +511,34 @@ export default function Login() {
               <div ref={googleBtnRef} className="flex justify-center min-h-[44px]" />
             </div>
           )}
+          </>
+          )}
         </div>
 
         {/* Redirect */}
         <p className="text-center mt-unit-lg font-body-md text-body-md text-on-surface-variant">
-          {isSignup ? "Already have an account? " : "Don't have an account? "}
-          <button
-            onClick={() => {
-              setMode(isSignup ? "signin" : "signup");
-              setErr("");
-            }}
-            className="text-primary font-semibold hover:underline"
-          >
-            {isSignup ? "Sign In" : "Create Account"}
-          </button>
+          {isRecover ? (
+            <>
+              Remembered your password?{" "}
+              <button onClick={backToSignIn} className="text-primary font-semibold hover:underline">
+                Back to Sign In
+              </button>
+            </>
+          ) : (
+            <>
+              {isSignup ? "Already have an account? " : "Don't have an account? "}
+              <button
+                onClick={() => {
+                  setMode(isSignup ? "signin" : "signup");
+                  setErr("");
+                  setInfo("");
+                }}
+                className="text-primary font-semibold hover:underline"
+              >
+                {isSignup ? "Sign In" : "Create Account"}
+              </button>
+            </>
+          )}
         </p>
       </main>
     </div>

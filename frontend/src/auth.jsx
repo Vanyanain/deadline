@@ -29,12 +29,17 @@ export function AuthProvider({ children }) {
     return user;
   }, []);
 
-  const register = useCallback(async (email, password, name) => {
-    const { token, user } = await api.register(email, password, name);
-    tokenStore.set(token);
-    setUser(user);
-    return user;
-  }, []);
+  const register = useCallback(
+    async (email, password, name, securityQuestion, securityAnswer) => {
+      const { token, user } = await api.register(
+        email, password, name, securityQuestion, securityAnswer
+      );
+      tokenStore.set(token);
+      setUser(user);
+      return user;
+    },
+    []
+  );
 
   const loginWithGoogle = useCallback(async (credential) => {
     const { token, user } = await api.googleLogin(credential);

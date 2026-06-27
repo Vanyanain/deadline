@@ -62,11 +62,18 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     name: Optional[str] = None
+    security_question: Optional[str] = None
+    security_answer: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+
+def _norm_answer(a: str) -> str:
+    """Normalise a security answer so casing/whitespace don't matter."""
+    return " ".join((a or "").strip().lower().split())
 
 
 def _auth_response(user: dict) -> dict:
@@ -83,8 +90,47 @@ def register(req: RegisterRequest):
     if store.get_user_by_email(email):
         raise HTTPException(status_code=409, detail="An account with this email already exists")
     name = (req.name or email.split("@")[0]).strip()
-    user = store.create_user(email, name, hash_password(req.password))
+    q = (req.security_question or "").strip() or None
+    ans_hash = None
+    if q and req.security_answer and req.security_answer.strip():
+        ans_hash = hash_password(_norm_answer(req.security_answer))
+    user = store.create_user(email, name, hash_password(req.password),
+                             security_question=q, security_answer_hash=ans_hash)
     return _auth_response(user)
+
+
+class SecurityQuestionRequest(BaseModel):
+    email: str
+
+
+@app.post("/api/auth/security-question")
+def security_question(req: SecurityQuestionRequest):
+    """Return the account's security question (if any) so the user can answer it.
+    Always 200 — a null question covers both 'no account' and 'none set' so we
+    don't reveal which emails exist."""
+    row = store.get_user_by_email(req.email)
+    q = row.get("security_question") if row else None
+    return {"question": q or None}
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    answer: str
+    new_password: str
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(req: ResetPasswordRequest):
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    row = store.get_user_by_email(req.email)
+    ans_hash = row.get("security_answer_hash") if row else None
+    if not row or not ans_hash:
+        raise HTTPException(status_code=400, detail="No security question is set for this account.")
+    if not verify_password(_norm_answer(req.answer), ans_hash):
+        raise HTTPException(status_code=401, detail="That answer doesn't match. Try again.")
+    store.set_password(row["uid"], hash_password(req.new_password))
+    return {"ok": True}
 
 
 @app.post("/api/auth/login")

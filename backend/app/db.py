@@ -18,15 +18,17 @@ DB_PATH = os.getenv("DB_PATH", str(_DEFAULT_PATH))
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
-    uid           TEXT PRIMARY KEY,
-    email         TEXT UNIQUE NOT NULL,
-    name          TEXT,
-    password_hash TEXT NOT NULL,
-    role          TEXT DEFAULT 'Member',
-    plan          TEXT DEFAULT 'Free Plan',
-    avatar_url    TEXT,
-    settings      TEXT,
-    created       TEXT
+    uid                  TEXT PRIMARY KEY,
+    email                TEXT UNIQUE NOT NULL,
+    name                 TEXT,
+    password_hash        TEXT NOT NULL,
+    role                 TEXT DEFAULT 'Member',
+    plan                 TEXT DEFAULT 'Free Plan',
+    avatar_url           TEXT,
+    settings             TEXT,
+    security_question    TEXT,
+    security_answer_hash TEXT,
+    created              TEXT
 );
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY, uid TEXT NOT NULL, data TEXT NOT NULL, created TEXT
@@ -62,3 +64,8 @@ def conn():
 def init_db() -> None:
     with conn() as c:
         c.executescript(_SCHEMA)
+        # Migrate older DBs that predate the security-question columns.
+        cols = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
+        for col in ("security_question", "security_answer_hash"):
+            if col not in cols:
+                c.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT")

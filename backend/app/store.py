@@ -79,23 +79,36 @@ def _row_to_user(row) -> dict:
     u = dict(row)
     u["settings"] = json.loads(u["settings"]) if u.get("settings") else dict(_DEFAULT_SETTINGS)
     u.pop("password_hash", None)
+    u.pop("security_answer_hash", None)  # never expose the answer hash to clients
+    u["has_security_question"] = bool(u.pop("security_question", None))
     return u
 
 
 def create_user(email: str, name: str, password_hash: str,
-                role: str = "Member", plan: str = "Free Plan") -> dict:
+                role: str = "Member", plan: str = "Free Plan",
+                security_question: str | None = None,
+                security_answer_hash: str | None = None) -> dict:
     if _FS:
-        return fsdb.create_user(email, name, password_hash, role, plan)
+        return fsdb.create_user(email, name, password_hash, role, plan,
+                                security_question, security_answer_hash)
     uid = uuid.uuid4().hex
     with db.conn() as c:
         c.execute(
-            "INSERT INTO users (uid, email, name, password_hash, role, plan, settings, created) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT INTO users (uid, email, name, password_hash, role, plan, settings, "
+            "security_question, security_answer_hash, created) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (uid, email.lower().strip(), name, password_hash, role, plan,
-             json.dumps(_DEFAULT_SETTINGS), _now()),
+             json.dumps(_DEFAULT_SETTINGS), security_question, security_answer_hash, _now()),
         )
         row = c.execute("SELECT * FROM users WHERE uid=?", (uid,)).fetchone()
     return _row_to_user(row)
+
+
+def set_password(uid: str, password_hash: str) -> bool:
+    if _FS:
+        return fsdb.set_password(uid, password_hash)
+    with db.conn() as c:
+        cur = c.execute("UPDATE users SET password_hash=? WHERE uid=?", (password_hash, uid))
+    return cur.rowcount > 0
 
 
 def get_user_by_email(email: str) -> dict | None:

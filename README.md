@@ -93,4 +93,4 @@ See [`DEPLOY.md`](DEPLOY.md) for the full guide. In short: the backend serves th
 
 ---
 
-*Built for the BlockseBlock hackathon — "The Last-Minute Life Saver" problem statement.*
+

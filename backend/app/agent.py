@@ -343,18 +343,22 @@ def kickstart_task(uid: str, task_id: str, kind: str | None = None) -> dict | No
     kind = kind or _KICKSTART_KIND.get(task.get("category", "personal"), "steps")
     if not os.getenv("GEMINI_API_KEY"):
         return {"kind": kind, "draft": _kickstart_fallback(task, kind), "ai": False}
+    _kind_rule = {
+        "outline": "an outline — 4-6 labelled sections, each with a one-line prompt of what goes in it",
+        "email": "ONE complete, ready-to-send email with a Subject line",
+        "checklist": "a checklist of 4-6 concrete, tickable items (start each line with a box like ☐)",
+        "steps": "3-5 concrete next actions, smallest first",
+    }
+    want = _kind_rule.get(kind, _kind_rule["steps"])
     try:
         prompt = (
-            "You help people STOP procrastinating by giving them a real head start.\n"
+            "You help someone STOP procrastinating by giving them a real head start on a task.\n"
             f"Task: {task.get('title')}\n"
             f"Category: {task.get('category', 'personal')}\n"
             f"Deadline: {task.get('deadline') or 'none'}\n\n"
-            f"Produce a ready-to-use {kind} for THIS task. Rules:\n"
-            "- outline: 4-6 labelled sections, each with a one-line prompt\n"
-            "- email: a complete ready-to-send email WITH a Subject line\n"
-            "- checklist: 4-6 concrete, specific checkboxes\n"
-            "- steps: 3-5 concrete next actions, smallest first\n"
-            f"Be specific to this task. Return only the {kind}, no preamble."
+            f"Produce ONLY {want}, specific to THIS task.\n"
+            "Output just that one thing — do NOT include any other format, no preamble, "
+            "and no heading that names the format (e.g. don't write 'Outline' or 'Email')."
         )
         draft = tools._gemini_generate(prompt).strip()
         return {"kind": kind, "draft": draft or _kickstart_fallback(task, kind), "ai": bool(draft)}

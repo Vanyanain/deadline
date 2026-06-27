@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 
@@ -67,6 +67,15 @@ function AddTaskModal({ date, onClose, onAdded }) {
   const [effort, setEffort] = useState(60);
   const [time, setTime] = useState("17:00");
   const [saving, setSaving] = useState(false);
+  const [added, setAdded] = useState([]); // titles added so far on this day
+  const inputRef = useRef(null);
+
+  // Close on Escape.
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   async function save() {
     if (!title.trim()) return;
@@ -74,16 +83,20 @@ function AddTaskModal({ date, onClose, onAdded }) {
     const [h, m] = time.split(":").map(Number);
     const dl = new Date(date);
     dl.setHours(h || 17, m || 0, 0, 0);
+    const justAdded = title.trim();
     try {
       await api.createTask({
-        title: title.trim(),
+        title: justAdded,
         deadline: dl.toISOString(),
         priority,
         effort_minutes: effort,
         category,
       });
-      onAdded?.();
-      onClose();
+      onAdded?.();              // refresh the calendar behind the modal
+      setAdded((list) => [...list, justAdded]);
+      setTitle("");             // clear for the next task — modal stays open
+      setSaving(false);
+      inputRef.current?.focus(); // ready to type the next one
     } catch {
       setSaving(false);
     }
@@ -113,6 +126,7 @@ function AddTaskModal({ date, onClose, onAdded }) {
         </div>
 
         <input
+          ref={inputRef}
           autoFocus
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -167,9 +181,15 @@ function AddTaskModal({ date, onClose, onAdded }) {
           </div>
         </div>
 
+        {added.length > 0 && (
+          <div className="flex items-center gap-1.5 text-label-md text-primary mb-unit-sm">
+            <span className="material-symbols-outlined text-base">check_circle</span>
+            Added {added.length} task{added.length > 1 ? "s" : ""} to this day — add another or press Done.
+          </div>
+        )}
         <div className="flex gap-3 justify-end">
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-on-surface-variant hover:bg-surface-container-high">
-            Cancel
+            {added.length > 0 ? "Done" : "Cancel"}
           </button>
           <button
             onClick={save}

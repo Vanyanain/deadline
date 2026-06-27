@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import Markdown from "../components/Markdown";
 
 const INTENT_COPY = {
   extension: "draft a deadline-extension request",
@@ -163,8 +164,8 @@ export default function AtRisk() {
                     {expanded[a.id] ? "Hide draft" : "View draft"}
                   </button>
                   {expanded[a.id] && (
-                    <div className="bg-surface-container border border-outline-variant/30 rounded-xl p-unit-md text-on-surface-variant text-body-md whitespace-pre-wrap">
-                      {a.draft}
+                    <div className="bg-surface-container border border-outline-variant/30 rounded-xl p-unit-md text-on-surface-variant">
+                      <Markdown>{a.draft}</Markdown>
                     </div>
                   )}
                 </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { api } from "../api";
+import Markdown from "./Markdown";
 
 const KINDS = [
   ["outline", "Outline"],
@@ -108,9 +109,7 @@ export default function KickstartModal({ task, onClose, initialKind = null }) {
               Drafting your head start…
             </div>
           ) : (
-            <pre className="whitespace-pre-wrap font-sans text-body-md text-on-surface leading-relaxed">
-              {draft}
-            </pre>
+            <Markdown>{draft}</Markdown>
           )}
         </div>
 

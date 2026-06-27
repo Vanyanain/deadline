@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import Markdown from "../components/Markdown";
 
 const QUICK_PROMPTS = [
   "What should I focus on right now?",
@@ -20,13 +21,13 @@ function Message({ msg }) {
         </div>
       )}
       <div
-        className={`max-w-[80%] px-4 py-3 rounded-2xl text-body-md leading-relaxed whitespace-pre-wrap ${
+        className={`max-w-[80%] px-4 py-3 rounded-2xl text-body-md leading-relaxed ${
           isUser
-            ? "bg-primary text-on-primary-fixed rounded-br-sm"
+            ? "bg-primary text-on-primary-fixed rounded-br-sm whitespace-pre-wrap"
             : "bg-surface-container-low border border-outline-variant/30 text-on-surface rounded-bl-sm"
         }`}
       >
-        {msg.content}
+        {isUser ? msg.content : <Markdown>{msg.content}</Markdown>}
       </div>
     </div>
   );

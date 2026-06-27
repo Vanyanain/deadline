@@ -323,12 +323,12 @@ def _kickstart_fallback(task: dict, kind: str) -> str:
                 f"5. Conclusion — recap + the takeaway.\n\n"
                 f"▶ First action: spend 15 minutes filling in section 1.")
     if kind == "checklist":
-        return (f"Checklist — {title}\n\n"
-                f"☐ Gather what you need (details, login, amount, documents)\n"
-                f"☐ Do the core action\n"
-                f"☐ Confirm it's done (receipt / confirmation)\n"
-                f"☐ Record the date completed\n\n"
-                f"▶ Tick the first box now — it takes 2 minutes.")
+        return (f"**Checklist — {title}**\n\n"
+                f"- [ ] Gather what you need (details, login, amount, documents)\n"
+                f"- [ ] Do the core action\n"
+                f"- [ ] Confirm it's done (receipt / confirmation)\n"
+                f"- [ ] Record the date completed\n\n"
+                f"Tick the first box now — it takes 2 minutes.")
     return (f"How to finish: {title}\n\n"
             f"Step 1 — Break it into the smallest possible first action.\n"
             f"Step 2 — Do that one action right now (5 minutes).\n"
@@ -346,7 +346,7 @@ def kickstart_task(uid: str, task_id: str, kind: str | None = None) -> dict | No
     _kind_rule = {
         "outline": "an outline — 4-6 labelled sections, each with a one-line prompt of what goes in it",
         "email": "ONE complete, ready-to-send email with a Subject line",
-        "checklist": "a checklist of 4-6 concrete, tickable items (start each line with a box like ☐)",
+        "checklist": "a checklist of 4-6 concrete items, each on its own line starting with '- [ ] ' (a GitHub-style task list)",
         "steps": "3-5 concrete next actions, smallest first",
     }
     want = _kind_rule.get(kind, _kind_rule["steps"])

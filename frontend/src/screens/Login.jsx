@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
+import { api } from "../api";
 import ThemeToggle from "../components/ThemeToggle";
-
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 export default function Login() {
   const { login, register, loginWithGoogle } = useAuth();
@@ -20,8 +19,19 @@ export default function Login() {
   const [err, setErr] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  // Client ID from build-time env (local dev) OR fetched from the backend at runtime (prod).
+  const [googleClientId, setGoogleClientId] = useState(
+    import.meta.env.VITE_GOOGLE_CLIENT_ID || ""
+  );
 
   const isSignup = mode === "signup";
+
+  useEffect(() => {
+    api
+      .authConfig()
+      .then((c) => c?.google_client_id && setGoogleClientId(c.google_client_id))
+      .catch(() => {});
+  }, []);
 
   async function submit(e) {
     e.preventDefault();
@@ -57,15 +67,15 @@ export default function Login() {
     [loginWithGoogle, navigate, from]
   );
 
-  // Initialise Google Identity Services once its script has loaded.
+  // Initialise Google Identity Services once its script has loaded + we have the client ID.
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID) return;
+    if (!googleClientId) return;
     let tries = 0;
     const timer = setInterval(() => {
       if (window.google?.accounts?.id) {
         clearInterval(timer);
         window.google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
+          client_id: googleClientId,
           callback: handleGoogleCredential,
         });
         if (googleBtnRef.current) {
@@ -82,10 +92,10 @@ export default function Login() {
       }
     }, 100);
     return () => clearInterval(timer);
-  }, [handleGoogleCredential]);
+  }, [handleGoogleCredential, googleClientId]);
 
   function googleNotConfigured() {
-    setInfo("Google sign-in isn't configured yet — use email, or add VITE_GOOGLE_CLIENT_ID.");
+    setInfo("Google sign-in isn't configured on the server yet — use email for now.");
     setTimeout(() => setInfo(""), 4000);
   }
 
@@ -252,7 +262,7 @@ export default function Login() {
           </div>
 
           {/* Social — official Google button when configured, else a hint */}
-          {GOOGLE_CLIENT_ID ? (
+          {googleClientId ? (
             <div ref={googleBtnRef} className="flex justify-center min-h-[44px]" />
           ) : (
             <button

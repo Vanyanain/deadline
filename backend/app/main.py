@@ -10,6 +10,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import secrets
@@ -36,11 +37,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Built React app, copied to backend/static in the Docker image (single-container deploy).
+_STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
+
 
 # ---------- health -----------------------------------------------------------
 
 @app.get("/")
 def root():
+    # In production, serve the React app; in API-only/dev mode, a health JSON.
+    if (_STATIC_DIR / "index.html").exists():
+        return FileResponse(_STATIC_DIR / "index.html")
     return {"service": "deadline", "status": "ok"}
 
 
@@ -94,8 +101,9 @@ class GoogleAuthRequest(BaseModel):
 
 @app.get("/api/auth/config")
 def auth_config():
-    """Lets the frontend know which providers are available."""
-    return {"google": google_configured()}
+    """Lets the frontend know which providers are available + the public client ID.
+    The OAuth client ID is public by design, so it's safe to serve at runtime."""
+    return {"google": google_configured(), "google_client_id": os.getenv("GOOGLE_CLIENT_ID", "")}
 
 
 @app.post("/api/auth/google")
@@ -337,3 +345,16 @@ def delete_habit(habit_id: str, uid: str = Depends(verify_token)):
 def tick_endpoint(uid: str = Depends(verify_token_or_cron)):
     """Cloud Scheduler hits this. Accepts either user auth or a CRON_SECRET header."""
     return tick(uid)
+
+
+# ---------- serve the built React app (single-container production) -----------
+# Registered LAST so it only catches paths no API route claimed. Any unknown
+# path returns index.html so client-side routes (e.g. /reality-check) work on refresh.
+
+if _STATIC_DIR.exists():
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        candidate = (_STATIC_DIR / full_path).resolve()
+        if str(candidate).startswith(str(_STATIC_DIR.resolve())) and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(_STATIC_DIR / "index.html")

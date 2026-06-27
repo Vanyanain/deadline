@@ -1,0 +1,14 @@
+# Controls what gets uploaded to Cloud Build for `gcloud run deploy --source`.
+.git
+.gitignore
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+**/.env
+**/.env.*
+**/*.db
+**/*.sqlite3
+**/venv
+.playwright-mcp
+*-key.json

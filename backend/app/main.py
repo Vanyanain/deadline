@@ -178,6 +178,31 @@ def get_tasks(uid: str = Depends(verify_token)):
     return {"tasks": store.get_tasks(uid)}
 
 
+class TaskCreateRequest(BaseModel):
+    title: str
+    deadline: Optional[str] = None
+    priority: int = 3
+    effort_minutes: int = 60
+    category: str = "personal"
+    notes: Optional[str] = None
+
+
+@app.post("/api/tasks")
+def create_task(req: TaskCreateRequest, uid: str = Depends(verify_token)):
+    if not req.title.strip():
+        raise HTTPException(status_code=400, detail="Title required")
+    saved = store.upsert_tasks(uid, [{
+        "title": req.title.strip(),
+        "deadline": req.deadline,
+        "priority": req.priority,
+        "effort_minutes": req.effort_minutes,
+        "category": req.category,
+        "notes": req.notes,
+        "status": "todo",
+    }])
+    return {"task": saved[0]}
+
+
 class TaskUpdateRequest(BaseModel):
     title: Optional[str] = None
     status: Optional[str] = None

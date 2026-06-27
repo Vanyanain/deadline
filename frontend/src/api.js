@@ -67,6 +67,8 @@ export const api = {
     req("/api/braindump", { method: "POST", body: JSON.stringify({ text }) }),
 
   tasks: () => req("/api/tasks"),
+  createTask: (data) =>
+    req("/api/tasks", { method: "POST", body: JSON.stringify(data) }),
   updateTask: (id, updates) =>
     req(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(updates) }),
   deleteTask: (id) => req(`/api/tasks/${id}`, { method: "DELETE" }),

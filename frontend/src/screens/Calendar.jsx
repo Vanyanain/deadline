@@ -58,15 +58,145 @@ function DeadlineBadge({ deadline }) {
   return null;
 }
 
+const CATEGORIES = ["academic", "work", "finance", "health", "personal", "admin"];
+
+function AddTaskModal({ date, onClose, onAdded }) {
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("personal");
+  const [priority, setPriority] = useState(3);
+  const [effort, setEffort] = useState(60);
+  const [time, setTime] = useState("17:00");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!title.trim()) return;
+    setSaving(true);
+    const [h, m] = time.split(":").map(Number);
+    const dl = new Date(date);
+    dl.setHours(h || 17, m || 0, 0, 0);
+    try {
+      await api.createTask({
+        title: title.trim(),
+        deadline: dl.toISOString(),
+        priority,
+        effort_minutes: effort,
+        category,
+      });
+      onAdded?.();
+      onClose();
+    } catch {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface-container border border-outline-variant/40 rounded-2xl p-unit-lg w-full max-w-md shadow-2xl animate-fade-in-up"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-unit-md">
+          <div>
+            <h3 className="font-headline-md text-headline-md font-bold text-on-surface leading-tight">
+              Add task
+            </h3>
+            <p className="text-label-md text-primary">
+              {date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface">
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <input
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && save()}
+          placeholder="What needs doing?"
+          className="w-full bg-surface-container-high rounded-xl px-4 py-3 text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/50 mb-unit-md"
+        />
+
+        <div className="grid grid-cols-2 gap-unit-sm mb-unit-md">
+          <div>
+            <label className="text-label-md text-on-surface-variant block mb-1">Category</label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full bg-surface-container-high rounded-xl px-3 py-2 text-on-surface focus:outline-none"
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-label-md text-on-surface-variant block mb-1">Priority</label>
+            <select
+              value={priority}
+              onChange={(e) => setPriority(Number(e.target.value))}
+              className="w-full bg-surface-container-high rounded-xl px-3 py-2 text-on-surface focus:outline-none"
+            >
+              {[1, 2, 3, 4, 5].map((p) => (
+                <option key={p} value={p}>P{p}{p === 1 ? " (Urgent)" : p === 5 ? " (Low)" : ""}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-label-md text-on-surface-variant block mb-1">Time</label>
+            <input
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              className="w-full bg-surface-container-high rounded-xl px-3 py-2 text-on-surface focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-label-md text-on-surface-variant block mb-1">Effort (min)</label>
+            <input
+              type="number"
+              min={5}
+              value={effort}
+              onChange={(e) => setEffort(Number(e.target.value))}
+              className="w-full bg-surface-container-high rounded-xl px-3 py-2 text-on-surface focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3 justify-end">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-on-surface-variant hover:bg-surface-container-high">
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={!title.trim() || saving}
+            className="px-5 py-2 bg-primary text-on-primary-fixed rounded-xl font-bold disabled:opacity-50 flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-base">add</span> Add task
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Calendar() {
   const [tasks, setTasks] = useState([]);
-  const [view, setView] = useState("week"); // "week" | "month"
+  const [view, setView] = useState("month"); // "month" | "week"
   const [weekOffset, setWeekOffset] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
   const [selected, setSelected] = useState(null);
+  const [addDate, setAddDate] = useState(null); // day clicked to add a task
+
+  const loadTasks = () =>
+    api.tasks().then(({ tasks }) => setTasks(tasks || [])).catch(() => {});
 
   useEffect(() => {
-    api.tasks().then(({ tasks }) => setTasks(tasks || [])).catch(() => {});
+    loadTasks();
   }, []);
 
   const days = getWeekDays(weekOffset);
@@ -163,12 +293,16 @@ export default function Calendar() {
                 </div>
               </div>
 
-              {/* Tasks for this day */}
-              <div className="p-1.5 space-y-1 min-h-[80px]">
+              {/* Tasks for this day — click empty space to add */}
+              <div
+                className="p-1.5 space-y-1 min-h-[80px] cursor-pointer group"
+                onClick={() => setAddDate(day)}
+                title="Click to add a task"
+              >
                 {dayTasks.map((t) => (
                   <button
                     key={t.id}
-                    onClick={() => setSelected(t)}
+                    onClick={(e) => { e.stopPropagation(); setSelected(t); }}
                     className="w-full text-left rounded-lg px-2 py-1.5 hover:opacity-80 transition-opacity"
                     style={{
                       background: (CAT_COLOR[t.category] || "#c0c1ff") + "20",
@@ -186,7 +320,7 @@ export default function Calendar() {
                 ))}
                 {dayTasks.length === 0 && (
                   <div className="h-full flex items-center justify-center">
-                    <span className="text-[10px] text-outline/40">—</span>
+                    <span className="material-symbols-outlined text-base text-outline/30 group-hover:text-primary transition-colors">add</span>
                   </div>
                 )}
               </div>
@@ -217,24 +351,29 @@ export default function Calendar() {
               return (
                 <div
                   key={i}
-                  className={`min-h-[88px] rounded-lg border p-1.5 flex flex-col transition-colors ${
+                  onClick={() => setAddDate(day)}
+                  title="Click to add a task"
+                  className={`min-h-[88px] rounded-lg border p-1.5 flex flex-col transition-colors cursor-pointer group hover:border-primary/40 ${
                     isT
                       ? "border-primary/50 bg-primary/5"
                       : "border-outline-variant/30 bg-surface-container-lowest"
                   } ${inMonth ? "" : "opacity-40"}`}
                 >
-                  <div
-                    className={`text-[11px] font-bold leading-none mb-1 ${
-                      isT ? "text-primary" : "text-on-surface"
-                    }`}
-                  >
-                    {day.getDate()}
+                  <div className="flex items-center justify-between mb-1">
+                    <div
+                      className={`text-[11px] font-bold leading-none ${
+                        isT ? "text-primary" : "text-on-surface"
+                      }`}
+                    >
+                      {day.getDate()}
+                    </div>
+                    <span className="material-symbols-outlined text-[13px] text-outline/0 group-hover:text-primary transition-colors">add</span>
                   </div>
                   <div className="space-y-0.5 overflow-hidden">
                     {dayTasks.slice(0, 3).map((t) => (
                       <button
                         key={t.id}
-                        onClick={() => setSelected(t)}
+                        onClick={(e) => { e.stopPropagation(); setSelected(t); }}
                         className="w-full text-left rounded px-1 py-0.5 text-[10px] font-medium text-on-surface leading-tight truncate hover:opacity-80 transition-opacity"
                         style={{
                           background: (CAT_COLOR[t.category] || "#c0c1ff") + "22",
@@ -255,6 +394,11 @@ export default function Calendar() {
             })}
           </div>
         </div>
+      )}
+
+      {/* Add task on a clicked day */}
+      {addDate && (
+        <AddTaskModal date={addDate} onClose={() => setAddDate(null)} onAdded={loadTasks} />
       )}
 
       {/* Task detail popover */}
@@ -332,11 +476,11 @@ export default function Calendar() {
 
       {activeTasks.length === 0 && (
         <div className="border border-outline-variant/40 rounded-2xl p-unit-xl text-center text-on-surface-variant">
-          No tasks to schedule.{" "}
+          No tasks scheduled yet — <span className="text-primary font-bold">click any day above</span> to add one, or{" "}
           <Link to="/braindump" className="text-primary font-bold">
-            Brain-dump first
-          </Link>
-          .
+            brain-dump
+          </Link>{" "}
+          a whole list.
         </div>
       )}
     </main>

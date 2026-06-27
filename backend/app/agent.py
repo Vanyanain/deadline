@@ -86,7 +86,11 @@ def _extract_and_save(uid: str, opening: str) -> int:
     """One forced `upsert_tasks` turn — saves every task from the brain-dump in a
     SINGLE Gemini call. We deliberately stop there (instead of looping through
     gmail/calendar/schedule/draft tools) to stay well within the free tier; the
-    summary is then composed locally from the saved tasks. Returns #tools run."""
+    summary is then composed locally from the saved tasks. Returns #tasks saved.
+
+    The model sometimes emits the upsert call more than once (parallel calls) or
+    repeats a task, so we gather every task across all calls and de-dupe by title
+    before a single save — otherwise a 3-item dump lands as 6 tasks."""
     model = _model_with_tools()
     chat = model.start_chat()
     resp = chat.send_message(opening, tool_config={
@@ -94,14 +98,20 @@ def _extract_and_save(uid: str, opening: str) -> int:
             "mode": "ANY", "allowed_function_names": ["upsert_tasks"],
         }
     })
-    ran = 0
+    seen: set[str] = set()
+    batch: list[dict] = []
     for p in resp.candidates[0].content.parts:
         fc = getattr(p, "function_call", None)
-        if fc and fc.name:
+        if fc and fc.name == "upsert_tasks":
             args = _to_plain(fc.args) if fc.args else {}
-            tools.call_tool(fc.name, uid, args)
-            ran += 1
-    return ran
+            for t in args.get("tasks", []) or []:
+                key = (t.get("title") or "").strip().lower()
+                if key and key not in seen:
+                    seen.add(key)
+                    batch.append(t)
+    if batch:
+        tools.call_tool("upsert_tasks", uid, {"tasks": batch})
+    return len(batch)
 
 
 # ---- Offline / fallback brain-dump parser -----------------------------------

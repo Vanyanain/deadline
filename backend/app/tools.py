@@ -127,12 +127,33 @@ def upsert_tasks_tool(uid: str, tasks: list[dict]) -> dict:
     return {"saved": len(saved), "task_ids": [t["id"] for t in saved]}
 
 
-def _gemini_generate(prompt: str) -> str:
+# Small in-process cache so identical prompts (re-opening Kickstart, re-running
+# Reality Check on unchanged tasks, etc.) don't spend a fresh API call. The key
+# is the prompt itself, so any change in inputs naturally misses the cache.
+import hashlib
+import time as _time
+
+_GEN_CACHE: dict[str, tuple[float, str]] = {}
+_GEN_CACHE_TTL = 900   # 15 minutes
+_GEN_CACHE_MAX = 200
+
+
+def _gemini_generate(prompt: str, use_cache: bool = True) -> str:
+    key = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    if use_cache:
+        hit = _GEN_CACHE.get(key)
+        if hit and (_time.time() - hit[0]) < _GEN_CACHE_TTL:
+            return hit[1]
     import google.generativeai as genai
     genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
     model = genai.GenerativeModel(os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
     resp = model.generate_content(prompt)
-    return resp.text or ""
+    text = resp.text or ""
+    if text:
+        if len(_GEN_CACHE) >= _GEN_CACHE_MAX:
+            _GEN_CACHE.clear()
+        _GEN_CACHE[key] = (_time.time(), text)
+    return text
 
 
 def draft_deliverable(uid: str, task_id: str, kind: str, task_title: str = "") -> dict:

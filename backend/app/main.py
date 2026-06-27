@@ -236,11 +236,12 @@ def delete_task(task_id: str, uid: str = Depends(verify_token)):
 
 class KickstartRequest(BaseModel):
     kind: Optional[str] = None  # outline | email | checklist | steps
+    fresh: bool = False         # true = bypass cache (the Regenerate button)
 
 
 @app.post("/api/tasks/{task_id}/kickstart")
 def kickstart(task_id: str, req: KickstartRequest, uid: str = Depends(verify_token)):
-    res = kickstart_task(uid, task_id, req.kind)
+    res = kickstart_task(uid, task_id, req.kind, fresh=req.fresh)
     if not res:
         raise HTTPException(status_code=404, detail="Task not found")
     return res

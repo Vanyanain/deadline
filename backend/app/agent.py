@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 from . import store, tools
 
 MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-MAX_STEPS = 8
 
 BRAIN_DUMP_SYSTEM = """You are Deadline, an autonomous productivity agent. You do not just remind — you act.
 
@@ -83,32 +82,26 @@ def _to_plain(obj):
         return obj
 
 
-def _run_tool_loop(uid: str, opening: str) -> str:
+def _extract_and_save(uid: str, opening: str) -> int:
+    """One forced `upsert_tasks` turn — saves every task from the brain-dump in a
+    SINGLE Gemini call. We deliberately stop there (instead of looping through
+    gmail/calendar/schedule/draft tools) to stay well within the free tier; the
+    summary is then composed locally from the saved tasks. Returns #tools run."""
     model = _model_with_tools()
     chat = model.start_chat()
-    msg = opening
-    for step in range(MAX_STEPS):
-        # Force upsert_tasks on the first turn so tasks are ALWAYS saved reliably
-        # (smaller models otherwise just chat instead of calling the tool).
-        kwargs = {}
-        if step == 0:
-            kwargs["tool_config"] = {
-                "function_calling_config": {
-                    "mode": "ANY", "allowed_function_names": ["upsert_tasks"],
-                }
-            }
-        resp = chat.send_message(msg, **kwargs)
-        calls = [p.function_call for p in resp.candidates[0].content.parts
-                 if getattr(p, "function_call", None) and p.function_call.name]
-        if not calls:
-            return resp.text or ""
-        replies = []
-        for fc in calls:
+    resp = chat.send_message(opening, tool_config={
+        "function_calling_config": {
+            "mode": "ANY", "allowed_function_names": ["upsert_tasks"],
+        }
+    })
+    ran = 0
+    for p in resp.candidates[0].content.parts:
+        fc = getattr(p, "function_call", None)
+        if fc and fc.name:
             args = _to_plain(fc.args) if fc.args else {}
-            result = tools.call_tool(fc.name, uid, args)
-            replies.append({"function_response": {"name": fc.name, "response": result}})
-        msg = replies
-    return "Step limit reached; partial plan saved."
+            tools.call_tool(fc.name, uid, args)
+            ran += 1
+    return ran
 
 
 # ---- Offline / fallback brain-dump parser -----------------------------------
@@ -261,6 +254,26 @@ def _offline_summary(tasks: list[dict], reason: str) -> str:
             f"(AI {reason}). I sorted them by urgency — review priorities on the Today screen.")
 
 
+def _brain_dump_summary(tasks: list[dict], added: int) -> str:
+    """Compose the brain-dump confirmation locally (no extra Gemini call)."""
+    if added <= 0:
+        return "Everything's already captured — nothing new to add."
+    now = datetime.now(timezone.utc)
+
+    def _soonest(t):
+        dl = t.get("deadline")
+        try:
+            return (datetime.fromisoformat(dl) - now).total_seconds() if dl else 9e18
+        except Exception:
+            return 9e18
+
+    top = min(tasks, key=lambda t: (t.get("priority", 3), _soonest(t))) if tasks else None
+    msg = f"Organized {added} task{'s' if added != 1 else ''} and sorted them by urgency."
+    if top:
+        msg += f' Top priority: "{top.get("title")}".'
+    return msg + " Review them on the Today screen."
+
+
 async def run_agent(text: str, uid: str) -> AgentResult:
     if not os.getenv("GEMINI_API_KEY"):
         tasks = _heuristic_parse(text, uid)
@@ -268,15 +281,9 @@ async def run_agent(text: str, uid: str) -> AgentResult:
 
     before = len(store.get_tasks(uid))
     try:
-        summary = _run_tool_loop(uid, f"Brain-dump from the user:\n\n{text}\n\nProcess this now.")
-        return AgentResult(
-            tasks=store.get_tasks(uid),
-            message=summary,
-            approvals=store.list_approvals(uid),
-        )
+        _extract_and_save(uid, f"Brain-dump from the user:\n\n{text}\n\nProcess this now.")
     except Exception as e:
-        # If the tool loop already saved tasks before failing (e.g. on the
-        # summary turn), keep them — don't double-parse with the heuristic.
+        # Gemini unavailable / rate-limited → keep the app fully functional.
         saved = store.get_tasks(uid)
         if len(saved) > before:
             return AgentResult(
@@ -284,11 +291,21 @@ async def run_agent(text: str, uid: str) -> AgentResult:
                 message=f"Organized {len(saved) - before} task(s). Review them on the Today screen.",
                 approvals=store.list_approvals(uid),
             )
-        # Gemini unavailable / rate-limited → keep the app fully functional.
         err = str(e).lower()
         reason = "rate limit reached" if ("429" in err or "quota" in err) else "AI temporarily unavailable"
         tasks = _heuristic_parse(text, uid)
         return AgentResult(tasks=tasks, message=_offline_summary(tasks, reason=reason))
+
+    tasks = store.get_tasks(uid)
+    if len(tasks) == before:
+        # Model returned nothing usable — fall back to the offline parser so a
+        # brain-dump never comes back empty.
+        tasks = _heuristic_parse(text, uid)
+    return AgentResult(
+        tasks=tasks,
+        message=_brain_dump_summary(tasks, len(tasks) - before),
+        approvals=store.list_approvals(uid),
+    )
 
 
 def _find_task(uid: str, task_id: str) -> dict | None:
@@ -336,7 +353,8 @@ def _kickstart_fallback(task: dict, kind: str) -> str:
             f"▶ Starting is the hard part. Just do Step 1.")
 
 
-def kickstart_task(uid: str, task_id: str, kind: str | None = None) -> dict | None:
+def kickstart_task(uid: str, task_id: str, kind: str | None = None,
+                   fresh: bool = False) -> dict | None:
     task = _find_task(uid, task_id)
     if not task:
         return None
@@ -360,7 +378,7 @@ def kickstart_task(uid: str, task_id: str, kind: str | None = None) -> dict | No
             "Output just that one thing — do NOT include any other format, no preamble, "
             "and no heading that names the format (e.g. don't write 'Outline' or 'Email')."
         )
-        draft = tools._gemini_generate(prompt).strip()
+        draft = tools._gemini_generate(prompt, use_cache=not fresh).strip()
         return {"kind": kind, "draft": draft or _kickstart_fallback(task, kind), "ai": bool(draft)}
     except Exception:
         return {"kind": kind, "draft": _kickstart_fallback(task, kind), "ai": False}
@@ -403,7 +421,7 @@ def task_reasoning(uid: str, task_id: str) -> dict | None:
             f"Task: {task.get('title')} | priority {task.get('priority', 3)} | "
             f"deadline {task.get('deadline') or 'none'}."
         )
-        text = _model_plain().generate_content(prompt).text
+        text = tools._gemini_generate(prompt)
         return {"reasoning": (text or "").strip() or _why_fallback(task), "ai": bool(text)}
     except Exception:
         return {"reasoning": _why_fallback(task), "ai": False}
@@ -472,7 +490,7 @@ def unblock_task(uid: str, task_id: str, block: str) -> dict | None:
                 "REFRAME: <2 sentences naming what's really going on and reframing it — warm, direct, no platitudes>\n"
                 "STEP: <one concrete action they can finish in under 5 minutes, specific to THIS task>"
             )
-            text = _model_plain().generate_content(prompt).text or ""
+            text = tools._gemini_generate(prompt)
             msg = step = None
             for line in text.splitlines():
                 s = line.strip()
@@ -607,7 +625,7 @@ def reality_check(uid: str) -> dict:
                 f"Verdict: {verdict}. ~{needed}h of work is due soon; about ~{scheduled}h realistically "
                 f"fits and ~{at_risk}h risks being missed."
             )
-            txt = (_model_plain().generate_content(prompt).text or "").strip()
+            txt = tools._gemini_generate(prompt).strip()
             if txt:
                 summary, ai_used = txt, True
         except Exception:

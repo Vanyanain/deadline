@@ -20,10 +20,10 @@ export default function KickstartModal({ task, onClose, initialKind = null }) {
   const [copied, setCopied] = useState(false);
 
   const load = useCallback(
-    async (k) => {
+    async (k, fresh = false) => {
       setLoading(true);
       try {
-        const res = await api.kickstart(task.id, k);
+        const res = await api.kickstart(task.id, k, fresh);
         setDraft(res.draft);
         setKind(res.kind);
         setUsedAi(res.ai);
@@ -122,7 +122,7 @@ export default function KickstartModal({ task, onClose, initialKind = null }) {
           </span>
           <div className="flex gap-2">
             <button
-              onClick={() => load(kind)}
+              onClick={() => load(kind, true)}
               disabled={loading}
               className="px-4 py-2 rounded-xl text-on-surface-variant hover:bg-surface-container-high flex items-center gap-1 disabled:opacity-50"
             >

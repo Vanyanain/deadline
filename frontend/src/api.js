@@ -72,8 +72,8 @@ export const api = {
   updateTask: (id, updates) =>
     req(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(updates) }),
   deleteTask: (id) => req(`/api/tasks/${id}`, { method: "DELETE" }),
-  kickstart: (id, kind) =>
-    req(`/api/tasks/${id}/kickstart`, { method: "POST", body: JSON.stringify({ kind }) }),
+  kickstart: (id, kind, fresh = false) =>
+    req(`/api/tasks/${id}/kickstart`, { method: "POST", body: JSON.stringify({ kind, fresh }) }),
   whyNow: (id) => req(`/api/tasks/${id}/why`),
   unblock: (id, block) =>
     req(`/api/tasks/${id}/unblock`, { method: "POST", body: JSON.stringify({ block }) }),

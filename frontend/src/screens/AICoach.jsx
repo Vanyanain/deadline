@@ -66,6 +66,7 @@ export default function AICoach() {
   const [busy, setBusy] = useState(false);
   const [voiceOn, setVoiceOn] = useState(false);
   const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const recogRef = useRef(null);
@@ -93,24 +94,46 @@ export default function AICoach() {
   }
 
   function toggleListen() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
     if (listening) {
       recogRef.current?.stop();
       return;
     }
-    const rec = new SR();
-    rec.lang = "en-US";
-    rec.interimResults = false;
-    rec.onstart = () => setListening(true);
-    rec.onend = () => setListening(false);
-    rec.onresult = (e) => {
-      const t = Array.from(e.results).map((r) => r[0].transcript).join(" ");
-      setInput(t);
-      setTimeout(() => send(t), 150); // hands-free: auto-send dictation
-    };
-    recogRef.current = rec;
-    rec.start();
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      setVoiceError("Voice input isn't supported in this browser — try Chrome, or just type your question.");
+      return;
+    }
+    // Start synchronously inside the click so the browser keeps the user-gesture
+    // context (Safari requires it) and shows the mic-permission prompt itself.
+    try {
+      const rec = new SR();
+      rec.lang = "en-US";
+      rec.interimResults = false;
+      rec.continuous = false;
+      rec.onstart = () => { setVoiceError(""); setListening(true); };
+      rec.onend = () => setListening(false);
+      rec.onerror = (e) => {
+        setListening(false);
+        const err = e?.error;
+        if (err === "not-allowed" || err === "service-not-allowed") {
+          setVoiceError("Microphone access is blocked. Allow the mic for this site in your browser settings, then tap the mic again.");
+        } else if (err === "no-speech") {
+          setVoiceError("I didn't catch anything — tap the mic and speak again.");
+        } else if (err && err !== "aborted") {
+          setVoiceError(`Voice input error (${err}). You can type instead.`);
+        }
+      };
+      rec.onresult = (e) => {
+        const t = Array.from(e.results).map((r) => r[0].transcript).join(" ");
+        setInput(t);
+        setTimeout(() => send(t), 150); // hands-free: auto-send dictation
+      };
+      recogRef.current = rec;
+      rec.start();
+    } catch {
+      setListening(false);
+      setVoiceError("Couldn't start voice input. You can type your question instead.");
+    }
   }
 
   async function send(text) {
@@ -203,6 +226,15 @@ export default function AICoach() {
 
       {/* Input */}
       <div className="shrink-0 px-unit-lg py-unit-md border-t border-outline-variant/30 bg-surface sticky bottom-0 md:static">
+        {voiceError && (
+          <div className="md:max-w-3xl md:mx-auto mb-2 flex items-start gap-2 text-label-md text-error bg-error/10 border border-error/20 rounded-xl px-3 py-2">
+            <span className="material-symbols-outlined text-base shrink-0">mic_off</span>
+            <span className="flex-1 leading-snug">{voiceError}</span>
+            <button onClick={() => setVoiceError("")} aria-label="Dismiss" className="text-error/70 hover:text-error shrink-0">
+              <span className="material-symbols-outlined text-base">close</span>
+            </button>
+          </div>
+        )}
         <div className="md:max-w-3xl md:mx-auto flex gap-3 items-end">
           <button
             onClick={toggleListen}
@@ -221,7 +253,7 @@ export default function AICoach() {
               ref={inputRef}
               rows={1}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => { setInput(e.target.value); if (voiceError) setVoiceError(""); }}
               onKeyDown={handleKey}
               placeholder="Ask anything about your tasks, schedule, or productivity…"
               className="w-full bg-transparent text-on-surface placeholder:text-outline text-body-md resize-none focus:outline-none max-h-32"

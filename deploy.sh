@@ -29,6 +29,8 @@ gcloud run deploy "$SERVICE" \
   --platform managed \
   --allow-unauthenticated \
   --memory 512Mi \
+  --min-instances 0 \
+  --max-instances 3 \
   --set-env-vars "GEMINI_API_KEY=${GEMINI_API_KEY},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},JWT_SECRET=${JWT_SECRET},USE_FIRESTORE=1"
 
 echo ""

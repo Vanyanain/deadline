@@ -8,15 +8,29 @@ Students, professionals, and entrepreneurs miss assignments, bills, meetings, an
 
 ## ✨ Key Features
 
+### Plan & prioritize
 - **🧠 Brain-dump → structured plan.** Type or *speak* everything on your plate. The Gemini-powered agent extracts every commitment as a structured task (deadline, priority, effort, category) using function-calling.
 - **🎯 Intelligent prioritization.** Tasks are ranked by urgency and deadline into a clean "Active Priority" focus view.
 - **📊 Command-center dashboard.** Personalized greeting, live stats (due today, overdue, this week, completion rate), and an at-a-glance prioritized list.
+- **🗓️ Monthly calendar.** Opens on the month view; click any day to add a task (with time, priority, effort, and category) — and stack several tasks on a single day without reopening the form.
+- **🔁 Habit tracking** with daily check-ins and streaks.
+
+### Beat procrastination — the signature trio
+- **⚖️ Reality Check.** An honest verdict on whether your workload actually fits the time you have: it weighs hours *needed* against hours *available* and tells you exactly what's at risk.
+- **⚡ Kickstart.** Generates a ready-to-use head start for any task — an outline, a complete email, a tickable checklist, or concrete first steps — so you never face a blank page. Each format is produced cleanly on its own, and can be regenerated or copied.
+- **🧩 Unblock ("I'm stuck").** Names *why* you're avoiding a task and hands you one tiny, 5-minute first action to break the freeze.
+- **❓ Why now?** One-tap reasoning on why a task matters right now and what's concretely at stake if you skip it.
+
+### AI coach & resilience
+- **💬 AI productivity coach** with full context of your tasks ("What should I focus on right now?") — plus **voice**: speak your question with the mic and hear the reply read back.
 - **⚠️ Proactive at-risk detection.** An autonomous "agent check" scans your plan for slippage and drafts consequence-management messages (e.g. a deadline-extension email) — held in a **human-in-the-loop approval queue** so nothing sends without your OK.
-- **💬 AI productivity coach.** A conversational coach with full context of your tasks ("What should I focus on right now?").
-- **🗓️ Weekly calendar + habit tracking** with streaks.
-- **🔐 Real auth** — email/password (hashed) and **Google Sign-In**.
-- **🌗 Polished light & dark themes** with a one-click toggle.
-- **🛟 Always-on resilience.** If the AI is unavailable or rate-limited, a deterministic offline parser keeps brain-dump fully functional — the app never breaks during a demo.
+- **✍️ Formatted AI output.** Every AI response renders as clean Markdown — headings, bold, lists, and **interactive checkboxes you can tick** — instead of raw text.
+- **🛟 Always-on resilience.** If the AI is rate-limited or unavailable, a deterministic offline parser keeps brain-dump fully functional and on-demand features fall back to smart templates — the app never breaks. Repeat AI calls are cached to stay light on usage.
+
+### Accounts & polish
+- **🔐 Real auth** — email/password (hashed) and **Google Sign-In**, plus **password recovery** via a security question set at sign-up (answers are stored hashed and matched case-insensitively).
+- **👤 Profiles** — editable name and uploadable profile photo, with an in-app help guide for new users.
+- **🌗 Polished light & dark themes** with a one-click toggle — every screen, chart, and control adapts for crisp contrast in both.
 
 ---
 
@@ -74,14 +88,16 @@ Open **http://localhost:5173**. Create an account, then hit **Brain-dump** and t
 
 ```
 backend/app/
-  main.py    — FastAPI routes (auth, tasks, brain-dump, chat, approvals, habits)
-  agent.py   — Gemini agent loop + offline heuristic fallback
-  tools.py   — function-calling tool registry
+  main.py    — FastAPI routes (auth + recovery, tasks, brain-dump, kickstart,
+               why-now, unblock, reality-check, chat, approvals, habits)
+  agent.py   — Gemini agent loop, signature features, offline heuristic fallback
+  tools.py   — function-calling tool registry + cached text generation
   auth.py    — JWT + password hashing + Google token verification
   store.py   — persistence API (delegates to SQLite or Firestore)
   db.py / fsdb.py — SQLite and Firestore backends
 frontend/src/
-  screens/   — Today, BrainDump, AtRisk, Calendar, Habits, AICoach, Profile, Login
+  screens/   — Today, BrainDump, RealityCheck, AtRisk, Calendar, Habits, AICoach, Profile, Login
+  components/ — KickstartModal, Markdown, ThemeToggle, …
   auth.jsx   — auth context;  theme.js — light/dark theme
 ```
 

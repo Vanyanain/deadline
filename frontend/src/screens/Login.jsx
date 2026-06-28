@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 import { api } from "../api";
-import { useTheme } from "../theme";
 import ThemeToggle from "../components/ThemeToggle";
 
 const SECURITY_QUESTIONS = [
@@ -16,13 +15,10 @@ const SECURITY_QUESTIONS = [
 
 export default function Login() {
   const { login, register, loginWithGoogle } = useAuth();
-  const { theme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || "/";
-  const googleBtnRef = useRef(null);
   const fallbackTimer = useRef(null);
-  const [googleFallback, setGoogleFallback] = useState(false); // show official button if One Tap can't appear
 
   const [mode, setMode] = useState("signin"); // "signin" | "signup" | "recover"
   const [name, setName] = useState("");
@@ -171,20 +167,6 @@ export default function Login() {
     return () => { clearInterval(timer); clearTimeout(fallbackTimer.current); };
   }, [handleGoogleCredential, googleClientId]);
 
-  // If One Tap can't appear (cool-down / blocked), fall back to Google's official
-  // button so sign-in always works.
-  useEffect(() => {
-    if (googleFallback && googleBtnRef.current && window.google?.accounts?.id) {
-      window.google.accounts.id.renderButton(googleBtnRef.current, {
-        theme: theme === "dark" ? "filled_black" : "outline",
-        size: "large",
-        width: 360,
-        text: "continue_with",
-        shape: "pill",
-      });
-    }
-  }, [googleFallback, theme]);
-
   function handleGoogleClick() {
     if (!window.google?.accounts?.id) {
       googleNotConfigured();
@@ -193,11 +175,11 @@ export default function Login() {
     setErr("");
     setInfo("Opening Google sign-in…");
     window.google.accounts.id.prompt();
-    // Safety net: if the One Tap dialog doesn't show, reveal the official button.
+    // If the prompt is blocked, guide the user WITHOUT ever exposing account
+    // details inline (we never render Google's personalized email button).
     clearTimeout(fallbackTimer.current);
     fallbackTimer.current = setTimeout(() => {
-      setInfo("");
-      setGoogleFallback(true);
+      setInfo("If the Google prompt didn't appear, allow pop-ups for this site, or sign in with your email and password below.");
     }, 2500);
   }
 
@@ -504,13 +486,6 @@ export default function Login() {
             </svg>
             Continue with Google
           </button>
-          {/* Backup: Google's official button, only if One Tap couldn't show. */}
-          {googleFallback && (
-            <div className="mt-3 flex flex-col items-center gap-1">
-              <p className="text-label-md text-on-surface-variant">If no popup appeared, use this:</p>
-              <div ref={googleBtnRef} className="flex justify-center min-h-[44px]" />
-            </div>
-          )}
           </>
           )}
         </div>

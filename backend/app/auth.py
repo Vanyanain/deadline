@@ -109,3 +109,29 @@ def verify_google_token(credential: str) -> dict | None:
         }
     except Exception:
         return None
+
+
+def verify_google_access_token(access_token: str) -> dict | None:
+    """Verify a Google OAuth access token by calling the userinfo endpoint.
+    Used by the popup token flow (custom button) — no client secret required."""
+    try:
+        import json
+        import urllib.request
+        req = urllib.request.Request(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            info = json.loads(resp.read().decode())
+        email = info.get("email")
+        if not email:
+            return None
+        return {
+            "sub": info.get("sub"),
+            "email": email,
+            "name": info.get("name") or email.split("@")[0],
+            "picture": info.get("picture"),
+            "email_verified": info.get("email_verified", False),
+        }
+    except Exception:
+        return None

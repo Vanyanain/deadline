@@ -22,7 +22,7 @@ from .agent import (
 from .auth import (
     verify_token, verify_token_or_cron,
     hash_password, verify_password, create_access_token,
-    verify_google_token, google_configured,
+    verify_google_token, verify_google_access_token, google_configured,
 )
 from . import store
 from . import ratelimit
@@ -152,7 +152,8 @@ def login(req: LoginRequest, request: Request):
 
 
 class GoogleAuthRequest(BaseModel):
-    credential: str = Field(min_length=1, max_length=8000)
+    credential: Optional[str] = Field(default=None, max_length=8000)   # ID token (rendered button)
+    access_token: Optional[str] = Field(default=None, max_length=4000)  # OAuth token (popup flow)
 
 
 @app.get("/api/auth/config")
@@ -166,7 +167,11 @@ def auth_config():
 def google_auth(req: GoogleAuthRequest):
     if not google_configured():
         raise HTTPException(status_code=503, detail="Google sign-in is not configured on the server.")
-    info = verify_google_token(req.credential)
+    info = None
+    if req.access_token:
+        info = verify_google_access_token(req.access_token)
+    elif req.credential:
+        info = verify_google_token(req.credential)
     if not info:
         raise HTTPException(status_code=401, detail="Could not verify Google account.")
 

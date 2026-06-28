@@ -73,6 +73,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ credential }),
     }),
+  googleLoginToken: (access_token) =>
+    req("/api/auth/google", {
+      method: "POST",
+      body: JSON.stringify({ access_token }),
+    }),
   authConfig: () => req("/api/auth/config"),
   me: () => req("/api/auth/me"),
   updateProfile: (updates) =>

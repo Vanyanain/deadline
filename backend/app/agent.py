@@ -765,10 +765,15 @@ def chat_agent(message: str, uid: str, history: list[dict]) -> str:
             chat_history.append({"role": role, "parts": [h.get("content", "")]})
         chat = model.start_chat(history=chat_history)
         resp = chat.send_message(message)
-        return resp.text or _coach_fallback(message, uid)
-    except Exception:
-        # Rate-limited or any failure → still answer with the task-aware coach.
-        return _coach_fallback(message, uid)
+        return resp.text or "I couldn't generate a response just now — mind trying again?"
+    except Exception as e:
+        # The offline coach ONLY kicks in when Gemini is rate-limited; for any
+        # other error we surface a retry instead of a heuristic (which can read
+        # as a "rubbish" answer when Gemini was actually available).
+        err = str(e).lower()
+        if any(k in err for k in ("429", "quota", "rate", "resource", "exhaust")):
+            return _coach_fallback(message, uid)
+        return "I couldn't reach the AI coach just now — please try again in a moment."
 
 
 def smart_suggest(uid: str) -> dict:

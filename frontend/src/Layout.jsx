@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "./auth";
 import { useCosmos } from "./cosmos";
+import { useTheme } from "./theme";
 import ThemeToggle from "./components/ThemeToggle";
 
 const NAV = [
@@ -50,6 +51,7 @@ function Item({ to, icon, label, end }) {
 export default function Layout() {
   const { user } = useAuth();
   const { on: cosmosOn, toggle: toggleCosmos } = useCosmos();
+  const { theme, toggle: toggleTheme } = useTheme();
   const initial = (user?.name || user?.email || "?").charAt(0).toUpperCase();
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem("sidebar_collapsed") === "1"; } catch { return false; }
@@ -174,6 +176,17 @@ export default function Layout() {
             <span className="text-[10px]">{n.label}</span>
           </NavLink>
         ))}
+        {/* Theme toggle — sidebar is hidden on mobile, so surface it here */}
+        <button
+          onClick={toggleTheme}
+          aria-label="Switch theme"
+          className="flex flex-col items-center gap-0.5 px-4 shrink-0 text-on-surface-variant"
+        >
+          <span className="material-symbols-outlined text-xl">
+            {theme === "dark" ? "light_mode" : "dark_mode"}
+          </span>
+          <span className="text-[10px]">Theme</span>
+        </button>
       </nav>
     </div>
   );

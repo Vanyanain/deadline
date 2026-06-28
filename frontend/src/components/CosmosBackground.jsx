@@ -8,6 +8,8 @@ const CosmosCanvas = lazy(() => import("./CosmosCanvas"));
 function capable() {
   try {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+    // Mobile stays basic (no 3D) — better performance and clarity on phones.
+    if (window.matchMedia("(max-width: 767px)").matches) return false;
     const c = document.createElement("canvas");
     return !!(c.getContext("webgl2") || c.getContext("webgl"));
   } catch {

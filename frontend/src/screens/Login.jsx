@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import { api } from "../api";
 import ThemeToggle from "../components/ThemeToggle";
@@ -16,8 +16,6 @@ const SECURITY_QUESTIONS = [
 export default function Login() {
   const { login, register, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-  const from = location.state?.from?.pathname || "/";
   const fallbackTimer = useRef(null);
 
   const [mode, setMode] = useState("signin"); // "signin" | "signup" | "recover"
@@ -65,7 +63,7 @@ export default function Login() {
       } else {
         await login(email, password);
       }
-      navigate(from, { replace: true });
+      navigate("/", { replace: true });
     } catch (e2) {
       setErr(e2.message || "Something went wrong. Please try again.");
     } finally {
@@ -119,7 +117,7 @@ export default function Login() {
     try {
       await api.resetPassword(email, recoverAnswer, newPassword);
       await login(email, newPassword);
-      navigate(from, { replace: true });
+      navigate("/", { replace: true });
     } catch (e2) {
       setErr(e2.message || "Reset failed. Please try again.");
     } finally {
@@ -135,14 +133,14 @@ export default function Login() {
       setBusy(true);
       try {
         await loginWithGoogle(response.credential);
-        navigate(from, { replace: true });
+        navigate("/", { replace: true });
       } catch (e) {
         setErr(e.message || "Google sign-in failed. Please try again.");
       } finally {
         setBusy(false);
       }
     },
-    [loginWithGoogle, navigate, from]
+    [loginWithGoogle, navigate]
   );
 
   // Initialise Google Identity Services once its script has loaded + we have the client ID.

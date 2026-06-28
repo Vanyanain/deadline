@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useTheme } from "../theme";
 import { useCosmos } from "../cosmos";
 
@@ -20,9 +21,11 @@ function capable() {
 export default function CosmosBackground() {
   const { theme } = useTheme();
   const { on } = useCosmos();
+  const onLogin = useLocation().pathname === "/login";
   const [ok] = useState(capable);
   const [hidden, setHidden] = useState(document.hidden);
-  const active = on && ok;
+  // Login is always immersive (first impression); the app respects the toggle.
+  const active = (on || onLogin) && ok;
 
   // Toggle the global class that makes surfaces translucent (glass over cosmos).
   useEffect(() => {

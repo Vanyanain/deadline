@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "./auth";
 import ThemeToggle from "./components/ThemeToggle";
@@ -48,18 +49,41 @@ function Item({ to, icon, label, end }) {
 export default function Layout() {
   const { user } = useAuth();
   const initial = (user?.name || user?.email || "?").charAt(0).toUpperCase();
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem("sidebar_collapsed") === "1"; } catch { return false; }
+  });
+  const toggle = () =>
+    setCollapsed((c) => {
+      const next = !c;
+      try { localStorage.setItem("sidebar_collapsed", next ? "1" : "0"); } catch {}
+      return next;
+    });
 
   return (
     <div className="bg-background text-on-background min-h-screen flex flex-col md:flex-row">
       {/* Sidebar */}
-      <aside className="hidden md:flex flex-col h-screen w-64 fixed left-0 top-0 bg-surface border-r border-outline-variant p-unit-md z-40">
-        <div className="mb-unit-xl px-unit-md pt-unit-sm">
-          <div className="font-headline-md text-headline-md font-black text-primary tracking-tighter">
-            Deadline
+      <aside
+        className={`hidden md:flex flex-col h-screen w-64 fixed left-0 top-0 bg-surface border-r border-outline-variant p-unit-md z-40 transition-transform duration-300 ${
+          collapsed ? "md:-translate-x-full" : ""
+        }`}
+      >
+        <div className="mb-unit-xl px-unit-md pt-unit-sm flex items-start justify-between gap-2">
+          <div>
+            <div className="font-headline-md text-headline-md font-black text-primary tracking-tighter">
+              Deadline
+            </div>
+            <div className="text-xs text-on-surface-variant font-medium opacity-60">
+              AI-Driven Focus
+            </div>
           </div>
-          <div className="text-xs text-on-surface-variant font-medium opacity-60">
-            AI-Driven Focus
-          </div>
+          <button
+            onClick={toggle}
+            title="Hide sidebar"
+            aria-label="Hide sidebar"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-colors shrink-0"
+          >
+            <span className="material-symbols-outlined text-xl">chevron_left</span>
+          </button>
         </div>
         <nav className="flex flex-col gap-1">
           {NAV.map((n) => (
@@ -98,8 +122,24 @@ export default function Layout() {
         </NavLink>
       </aside>
 
+      {/* Desktop: floating button to bring the sidebar back when hidden */}
+      {collapsed && (
+        <button
+          onClick={toggle}
+          title="Show sidebar"
+          aria-label="Show sidebar"
+          className="hidden md:flex fixed top-3 left-3 z-50 w-10 h-10 rounded-xl bg-surface-container-high border border-outline-variant/40 items-center justify-center text-on-surface-variant hover:text-primary shadow-lg transition-colors"
+        >
+          <span className="material-symbols-outlined">menu</span>
+        </button>
+      )}
+
       {/* Main */}
-      <div className="flex-1 md:ml-64 min-h-screen pb-16 md:pb-0">
+      <div
+        className={`flex-1 min-h-screen pb-16 md:pb-0 transition-all duration-300 ${
+          collapsed ? "md:ml-0" : "md:ml-64"
+        }`}
+      >
         <Outlet />
       </div>
 

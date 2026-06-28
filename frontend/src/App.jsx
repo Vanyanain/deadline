@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth";
+import CosmosBackground from "./components/CosmosBackground";
 import Layout from "./Layout";
 import Login from "./screens/Login";
 import Today from "./screens/Today";
@@ -31,6 +32,7 @@ export default function App() {
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AuthProvider>
+        <CosmosBackground />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "./auth";
+import { useCosmos } from "./cosmos";
 import ThemeToggle from "./components/ThemeToggle";
 
 const NAV = [
@@ -48,6 +49,7 @@ function Item({ to, icon, label, end }) {
 
 export default function Layout() {
   const { user } = useAuth();
+  const { on: cosmosOn, toggle: toggleCosmos } = useCosmos();
   const initial = (user?.name || user?.email || "?").charAt(0).toUpperCase();
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem("sidebar_collapsed") === "1"; } catch { return false; }
@@ -94,7 +96,19 @@ export default function Layout() {
           <span className="text-[10px] uppercase tracking-widest text-on-surface-variant/60 font-bold">
             Theme
           </span>
-          <ThemeToggle />
+          <div className="flex items-center gap-1">
+            <button
+              onClick={toggleCosmos}
+              title={cosmosOn ? "Cosmos background: on" : "Cosmos background: off"}
+              aria-label="Toggle cosmos background"
+              className={`flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:bg-surface-container-high ${
+                cosmosOn ? "text-primary" : "text-on-surface-variant"
+              }`}
+            >
+              <span className="material-symbols-outlined text-xl">auto_awesome</span>
+            </button>
+            <ThemeToggle />
+          </div>
         </div>
         <NavLink
           to="/profile"

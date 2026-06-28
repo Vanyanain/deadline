@@ -8,10 +8,10 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import secrets
 
@@ -25,6 +25,7 @@ from .auth import (
     verify_google_token, google_configured,
 )
 from . import store
+from . import ratelimit
 
 app = FastAPI(title="Deadline API", version="1.0.0")
 
@@ -59,16 +60,16 @@ def healthz():
 # ---------- auth -------------------------------------------------------------
 
 class RegisterRequest(BaseModel):
-    email: str
-    password: str
-    name: Optional[str] = None
-    security_question: Optional[str] = None
-    security_answer: Optional[str] = None
+    email: str = Field(max_length=254)
+    password: str = Field(min_length=6, max_length=200)
+    name: Optional[str] = Field(default=None, max_length=80)
+    security_question: Optional[str] = Field(default=None, max_length=200)
+    security_answer: Optional[str] = Field(default=None, max_length=200)
 
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=200)
 
 
 def _norm_answer(a: str) -> str:
@@ -81,7 +82,8 @@ def _auth_response(user: dict) -> dict:
 
 
 @app.post("/api/auth/register")
-def register(req: RegisterRequest):
+def register(req: RegisterRequest, request: Request):
+    ratelimit.hit(f"register:{ratelimit.client_ip(request)}", limit=8, window=600)
     email = req.email.lower().strip()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Valid email required")
@@ -100,11 +102,12 @@ def register(req: RegisterRequest):
 
 
 class SecurityQuestionRequest(BaseModel):
-    email: str
+    email: str = Field(max_length=254)
 
 
 @app.post("/api/auth/security-question")
-def security_question(req: SecurityQuestionRequest):
+def security_question(req: SecurityQuestionRequest, request: Request):
+    ratelimit.hit(f"secq:{ratelimit.client_ip(request)}", limit=20, window=600)
     """Return the account's security question (if any) so the user can answer it.
     Always 200 — a null question covers both 'no account' and 'none set' so we
     don't reveal which emails exist."""
@@ -114,13 +117,17 @@ def security_question(req: SecurityQuestionRequest):
 
 
 class ResetPasswordRequest(BaseModel):
-    email: str
-    answer: str
-    new_password: str
+    email: str = Field(max_length=254)
+    answer: str = Field(max_length=200)
+    new_password: str = Field(min_length=6, max_length=200)
 
 
 @app.post("/api/auth/reset-password")
-def reset_password(req: ResetPasswordRequest):
+def reset_password(req: ResetPasswordRequest, request: Request):
+    # Throttle answer-guessing per account and per IP.
+    email_key = req.email.lower().strip()
+    ratelimit.hit(f"reset:{email_key}", limit=6, window=600)
+    ratelimit.hit(f"reset-ip:{ratelimit.client_ip(request)}", limit=15, window=600)
     if len(req.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
     row = store.get_user_by_email(req.email)
@@ -134,7 +141,10 @@ def reset_password(req: ResetPasswordRequest):
 
 
 @app.post("/api/auth/login")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
+    # Throttle credential-stuffing per account and per IP.
+    ratelimit.hit(f"login:{req.email.lower().strip()}", limit=8, window=300)
+    ratelimit.hit(f"login-ip:{ratelimit.client_ip(request)}", limit=40, window=300)
     row = store.get_user_by_email(req.email)
     if not row or not verify_password(req.password, row["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -142,7 +152,7 @@ def login(req: LoginRequest):
 
 
 class GoogleAuthRequest(BaseModel):
-    credential: str
+    credential: str = Field(min_length=1, max_length=8000)
 
 
 @app.get("/api/auth/config")
@@ -182,14 +192,30 @@ def me(uid: str = Depends(verify_token)):
 
 
 class ProfileUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=80)
     avatar_url: Optional[str] = None
     settings: Optional[dict] = None
 
 
+_ALLOWED_SETTINGS = {"daily_report", "at_risk_alerts"}
+_MAX_AVATAR_LEN = 1_500_000  # ~1.1 MB image encoded as base64
+
+
 @app.patch("/api/auth/profile")
 def update_profile(req: ProfileUpdate, uid: str = Depends(verify_token)):
-    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    updates: dict = {}
+    if req.name is not None:
+        updates["name"] = req.name.strip()[:80]
+    if req.avatar_url is not None:
+        av = req.avatar_url
+        if av and not av.startswith("data:image/"):
+            raise HTTPException(status_code=400, detail="Avatar must be an uploaded image.")
+        if len(av) > _MAX_AVATAR_LEN:
+            raise HTTPException(status_code=400, detail="Image is too large — please choose a smaller photo.")
+        updates["avatar_url"] = av
+    if req.settings is not None:
+        # Only known boolean toggles are accepted — never arbitrary blobs.
+        updates["settings"] = {k: bool(v) for k, v in req.settings.items() if k in _ALLOWED_SETTINGS}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
     user = store.update_user(uid, updates)
@@ -201,7 +227,7 @@ def update_profile(req: ProfileUpdate, uid: str = Depends(verify_token)):
 # ---------- brain-dump -------------------------------------------------------
 
 class BrainDumpRequest(BaseModel):
-    text: str
+    text: str = Field(min_length=1, max_length=6000)
 
 
 class BrainDumpResponse(BaseModel):
@@ -225,12 +251,12 @@ def get_tasks(uid: str = Depends(verify_token)):
 
 
 class TaskCreateRequest(BaseModel):
-    title: str
-    deadline: Optional[str] = None
-    priority: int = 3
-    effort_minutes: int = 60
-    category: str = "personal"
-    notes: Optional[str] = None
+    title: str = Field(min_length=1, max_length=300)
+    deadline: Optional[str] = Field(default=None, max_length=40)
+    priority: int = Field(default=3, ge=1, le=5)
+    effort_minutes: int = Field(default=60, ge=0, le=100000)
+    category: str = Field(default="personal", max_length=40)
+    notes: Optional[str] = Field(default=None, max_length=4000)
 
 
 @app.post("/api/tasks")
@@ -250,13 +276,13 @@ def create_task(req: TaskCreateRequest, uid: str = Depends(verify_token)):
 
 
 class TaskUpdateRequest(BaseModel):
-    title: Optional[str] = None
-    status: Optional[str] = None
-    priority: Optional[int] = None
-    deadline: Optional[str] = None
-    effort_minutes: Optional[int] = None
-    category: Optional[str] = None
-    notes: Optional[str] = None
+    title: Optional[str] = Field(default=None, max_length=300)
+    status: Optional[str] = Field(default=None, max_length=20)
+    priority: Optional[int] = Field(default=None, ge=1, le=5)
+    deadline: Optional[str] = Field(default=None, max_length=40)
+    effort_minutes: Optional[int] = Field(default=None, ge=0, le=100000)
+    category: Optional[str] = Field(default=None, max_length=40)
+    notes: Optional[str] = Field(default=None, max_length=4000)
 
 
 @app.patch("/api/tasks/{task_id}")
@@ -281,7 +307,7 @@ def delete_task(task_id: str, uid: str = Depends(verify_token)):
 # ---------- Kickstart + Why-now (AI action helpers) --------------------------
 
 class KickstartRequest(BaseModel):
-    kind: Optional[str] = None  # outline | email | checklist | steps
+    kind: Optional[str] = Field(default=None, max_length=20)  # outline | email | checklist | steps
     fresh: bool = False         # true = bypass cache (the Regenerate button)
 
 
@@ -307,7 +333,7 @@ def reality_check_endpoint(uid: str = Depends(verify_token)):
 
 
 class UnblockRequest(BaseModel):
-    block: Optional[str] = None  # too_big | vague | unclear_start | fear | boring
+    block: Optional[str] = Field(default=None, max_length=40)  # too_big | vague | unclear_start | fear | boring
 
 
 @app.post("/api/tasks/{task_id}/unblock")
@@ -321,7 +347,7 @@ def unblock(task_id: str, req: UnblockRequest, uid: str = Depends(verify_token))
 # ---------- approvals --------------------------------------------------------
 
 class ResolveRequest(BaseModel):
-    decision: str  # "approved" | "rejected"
+    decision: str = Field(max_length=20)  # "approved" | "rejected"
 
 
 @app.get("/api/approvals")
@@ -342,8 +368,8 @@ def resolve(approval_id: str, req: ResolveRequest, uid: str = Depends(verify_tok
 # ---------- AI coach chat ----------------------------------------------------
 
 class ChatMessage(BaseModel):
-    message: str
-    history: list[dict] = []
+    message: str = Field(min_length=1, max_length=4000)
+    history: list[dict] = Field(default=[], max_length=50)
 
 
 @app.post("/api/chat")
@@ -364,10 +390,10 @@ def suggest(uid: str = Depends(verify_token)):
 # ---------- habits -----------------------------------------------------------
 
 class HabitCreate(BaseModel):
-    name: str
-    icon: str = "check_circle"
-    color: str = "#c0c1ff"
-    target_days: list[str] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    name: str = Field(min_length=1, max_length=120)
+    icon: str = Field(default="check_circle", max_length=40)
+    color: str = Field(default="#c0c1ff", max_length=20)
+    target_days: list[str] = Field(default=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], max_length=7)
 
 
 @app.get("/api/habits")
@@ -390,7 +416,7 @@ def create_habit(req: HabitCreate, uid: str = Depends(verify_token)):
 
 
 class HabitCheckRequest(BaseModel):
-    date: Optional[str] = None  # client's local YYYY-MM-DD; defaults to server today
+    date: Optional[str] = Field(default=None, max_length=10)  # client's local YYYY-MM-DD
 
 
 @app.post("/api/habits/{habit_id}/check")

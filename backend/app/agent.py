@@ -653,11 +653,98 @@ def reality_check(uid: str) -> dict:
     }
 
 
+def _due_phrase(h: float) -> str:
+    if h >= 1e8:
+        return "no deadline"
+    if h < 0:
+        return "overdue"
+    if h < 24:
+        return "due today"
+    if h < 48:
+        return "due tomorrow"
+    return f"due in {int(h / 24)} days"
+
+
+def _coach_fallback(message: str, uid: str) -> str:
+    """A genuinely useful offline coach — used whenever Gemini is missing or
+    rate-limited, so the AI Coach always answers using the user's real tasks."""
+    msg = (message or "").lower()
+    tasks = [t for t in store.get_tasks(uid) if t.get("status") != "done"]
+    now = datetime.now(timezone.utc)
+
+    def hrs(t):
+        dl = t.get("deadline")
+        if not dl:
+            return 1e9
+        try:
+            d = datetime.fromisoformat(str(dl).replace("Z", "+00:00"))
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=timezone.utc)
+            return (d - now).total_seconds() / 3600
+        except Exception:
+            return 1e9
+
+    def title(t):
+        return t.get("title", "(untitled)")
+
+    if not tasks:
+        return ("You're all clear — no open tasks right now. Add what's on your plate on the "
+                "**Brain-dump** screen and I'll help you prioritize and start.")
+
+    ranked = sorted(tasks, key=lambda t: (t.get("priority", 3), hrs(t)))
+    top = ranked[0]
+    overdue = [t for t in tasks if hrs(t) < 0]
+    today = [t for t in tasks if 0 <= hrs(t) <= 24]
+
+    if "extension" in msg or ("email" in msg and any(w in msg for w in ("deadline", "professor", "manager", "boss"))):
+        return ("Here's a clean way to ask for more time:\n\n"
+                f"**Subject:** Quick request — {title(top)}\n\n"
+                "Hi [name],\n\n"
+                f"I'm working on {title(top)} and want to deliver it properly. Could I have until [new date]? "
+                "I've already made progress on [part done], and the extra time would let me [finish well].\n\n"
+                "Thank you for understanding,\n[Your name]\n\n"
+                "_Tip: ask early, propose a specific new date, and show the progress you've already made._")
+
+    if "overwhelm" in msg or "prioriti" in msg or "too much" in msg:
+        out = ["When it feels like too much, do one thing at a time. Here's your order:"]
+        for i, t in enumerate(ranked[:3], 1):
+            out.append(f"{i}. **{title(t)}** — {_due_phrase(hrs(t))}")
+        out.append(f"\nStart with **{title(top)}** for the next 25 minutes. Everything else can wait until it's done.")
+        return "\n".join(out)
+
+    if "30 min" in msg or "quick" in msg or ("time" in msg and "free" in msg) or "short" in msg:
+        quick = min(tasks, key=lambda t: t.get("effort_minutes", 60))
+        return (f"With a short window, knock out **{title(quick)}** (~{quick.get('effort_minutes', 60)} min). "
+                "Small wins build momentum. If it's bigger than your window, just do the first step — open it and write one line.")
+
+    if any(w in msg for w in ("procrastinat", "stuck", "avoid", "can't start", "cant start")):
+        return (f"You're avoiding **{title(top)}** — totally normal when a task feels big or fuzzy. "
+                "Shrink it: forget the whole thing and do just the first 5-minute step (open the file, write the title, list 3 bullets). "
+                "Starting is the hard part — momentum does the rest. Try the **Kickstart** button on it for an instant first draft.")
+
+    if any(w in msg for w in ("schedule", "plan", "study", "this week", "organize")):
+        out = ["Here's a simple plan — most urgent first:"]
+        for t in ranked[:6]:
+            out.append(f"- **{title(t)}** — {_due_phrase(hrs(t))} (~{t.get('effort_minutes', 60)} min)")
+        out.append("\nBlock focused time for the top two today, then batch the rest by deadline.")
+        return "\n".join(out)
+
+    # Default: "what should I focus on?" and anything else.
+    parts = []
+    if overdue:
+        parts.append(f"⚠️ You have **{len(overdue)} overdue** — clear **{title(overdue[0])}** first.")
+    elif today:
+        parts.append(f"You have **{len(today)} due today** — start with **{title(today[0])}**.")
+    parts.append(f"Right now, focus on **{title(top)}** ({_due_phrase(hrs(top))}). Give it one uninterrupted 25-minute block, then check back and I'll point you to the next one.")
+    return " ".join(parts)
+
+
 def chat_agent(message: str, uid: str, history: list[dict]) -> str:
-    """Conversational AI coach. Returns the agent's reply text."""
+    """Conversational AI coach. Returns the agent's reply text.
+    Falls back to a heuristic coach (still task-aware) whenever Gemini is
+    missing or rate-limited, so the coach never goes dark."""
     if not os.getenv("GEMINI_API_KEY"):
-        return ("I'm in demo mode (no Gemini API key). Set GEMINI_API_KEY in .env to "
-                "enable the AI coach. For now: focus on your highest-priority task first.")
+        return _coach_fallback(message, uid)
 
     try:
         tasks = store.get_tasks(uid)
@@ -678,14 +765,10 @@ def chat_agent(message: str, uid: str, history: list[dict]) -> str:
             chat_history.append({"role": role, "parts": [h.get("content", "")]})
         chat = model.start_chat(history=chat_history)
         resp = chat.send_message(message)
-        return resp.text or "I couldn't generate a response. Please try again."
-    except Exception as e:
-        err = str(e)
-        if "429" in err or "quota" in err.lower() or "rate" in err.lower():
-            return ("I've hit the Gemini API rate limit for now. "
-                    "The free tier allows ~15 requests/minute. "
-                    "Wait 60 seconds and try again, or upgrade your Google AI Studio plan.")
-        return "Sorry, something went wrong on my end. Please try again in a moment."
+        return resp.text or _coach_fallback(message, uid)
+    except Exception:
+        # Rate-limited or any failure → still answer with the task-aware coach.
+        return _coach_fallback(message, uid)
 
 
 def smart_suggest(uid: str) -> dict:

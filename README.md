@@ -103,6 +103,20 @@ frontend/src/
 
 ---
 
+## 🔒 Security
+
+Deadline was built and audited against the security fundamentals:
+
+- **Access control — no IDOR.** Every task, habit, and approval is stored and queried **per user**. In production (Firestore) data lives in per-user subcollections (`users/{uid}/…`), so one user *physically cannot* read another's data; locally (SQLite) every query is scoped by user ID. All data endpoints require a valid token. *(Verified: a second user requesting another's record by ID gets 404.)*
+- **Authentication.** Passwords are hashed with **PBKDF2-SHA256** (200k rounds, per-user salt, constant-time compare); sessions are signed **JWTs that expire**; Google Sign-In ID tokens are verified server-side. Password and security-answer hashes are never returned to the client.
+- **Brute-force protection.** Login, registration, and password-reset are **rate-limited** per account and per IP (sliding window) — repeated attempts return HTTP 429.
+- **Input validation.** Every request is a typed **Pydantic** model with strict length and numeric bounds (oversized/malformed input → HTTP 422). SQL is fully **parameterized**; there is **no command execution** (`subprocess`/`eval`/`exec`) anywhere.
+- **XSS-safe.** AI output renders via **react-markdown** (no raw HTML, no `dangerouslySetInnerHTML`). Profile photos are re-encoded client-side through a canvas (stripping any payload) and validated server-side (`data:image/*`, size-capped).
+- **Secrets.** All keys (Gemini, JWT, OAuth) are **server-side environment variables** — never in the frontend or the repo. `.env` is gitignored and the git history is clean; the only value sent to the browser is the public OAuth client ID.
+- **Resilience.** Every AI feature has a deterministic **offline fallback** (including a task-aware coach), so a rate limit or outage degrades gracefully instead of failing.
+
+---
+
 ## 📦 Deploy to Google Cloud Run
 
 See [`DEPLOY.md`](DEPLOY.md) for the full guide. In short: the backend serves the built React app from a single container, deployed with `gcloud run deploy`, with `USE_FIRESTORE=1` for persistence.

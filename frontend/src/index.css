@@ -160,7 +160,7 @@ body { font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antial
   background: radial-gradient(125% 100% at 28% 32%, rgba(6,6,15,0.28), rgba(6,6,15,0.66) 100%);
 }
 :root:not(.dark) .cosmos-scrim {
-  background: radial-gradient(125% 100% at 28% 32%, rgba(255,255,255,0.42), rgba(244,242,251,0.72) 100%);
+  background: radial-gradient(125% 100% at 28% 32%, rgba(255,255,255,0.12), rgba(244,242,251,0.34) 100%);
 }
 
 /* Let the cosmos show behind the app + frost the panels into glass. */

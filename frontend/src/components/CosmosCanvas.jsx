@@ -1,6 +1,6 @@
 import { useRef, useMemo } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Stars, Sparkles } from "@react-three/drei";
+import { Stars, Sparkles, useTexture } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 
@@ -67,29 +67,55 @@ function CoreGlow() {
   );
 }
 
-// ---- soft light-mode nebula (pale clouds) -----------------------------------
-const VERT = `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
-const FRAG = `
-  precision highp float; varying vec2 vUv; uniform float uTime; uniform vec3 uA, uB, uC;
-  float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
-  float noise(vec2 p){ vec2 i=floor(p),f=fract(p); float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1)); vec2 u=f*f*(3.0-2.0*f); return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y; }
-  float fbm(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p=p*2.0+1.3; a*=0.5; } return v; }
-  void main(){ vec2 uv=vUv*3.0; float t=uTime*0.015; float n=fbm(uv+vec2(t,t*0.5)+fbm(uv*0.6-t)); vec3 col=mix(uA,uB,smoothstep(0.2,0.85,n)); col=mix(col,uC,smoothstep(0.55,1.0,fbm(uv*1.6-t))*0.6); float edge=smoothstep(1.3,0.2,length(vUv-0.5)*1.6); gl_FragColor=vec4(col, pow(n,2.0)*0.42*edge); }
-`;
-function Nebula() {
-  const mat = useRef();
-  const uniforms = useMemo(() => ({
-    uTime: { value: 0 },
-    uA: { value: new THREE.Color("#e7e3fb") },
-    uB: { value: new THREE.Color("#dcd6f7") },
-    uC: { value: new THREE.Color("#f6d9e6") },
-  }), []);
-  useFrame((s) => { if (mat.current) mat.current.uniforms.uTime.value = s.clock.elapsedTime; });
+// ---- light-mode "Cosmic Dawn": the pastel galaxy image as a 3D backdrop -----
+function DawnBackdrop() {
+  const tex = useTexture("/cosmic-dawn.jpg");
+  const ref = useRef();
+  useFrame((s) => {
+    if (!ref.current) return; // gentle position parallax → depth without revealing edges
+    ref.current.position.x = THREE.MathUtils.lerp(ref.current.position.x, s.pointer.x * 0.7, 0.03);
+    ref.current.position.y = THREE.MathUtils.lerp(ref.current.position.y, s.pointer.y * 0.45, 0.03);
+  });
   return (
-    <mesh position={[0, 0, -14]} scale={[46, 30, 1]}>
+    <mesh ref={ref} position={[0, 0, -14]} scale={[52, 29.25, 1]}>
       <planeGeometry args={[1, 1]} />
-      <shaderMaterial ref={mat} vertexShader={VERT} fragmentShader={FRAG} uniforms={uniforms} transparent depthWrite={false} />
+      <meshBasicMaterial map={tex} toneMapped={false} />
     </mesh>
+  );
+}
+
+// ---- 4-point ✦ sparkle stars (canvas texture on points) ---------------------
+function crossTexture() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  g.translate(32, 32);
+  const cg = g.createRadialGradient(0, 0, 0, 0, 0, 11);
+  cg.addColorStop(0, "rgba(255,255,255,1)");
+  cg.addColorStop(0.4, "rgba(255,255,255,0.55)");
+  cg.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = cg; g.beginPath(); g.arc(0, 0, 12, 0, 7); g.fill();
+  g.fillStyle = "rgba(255,255,255,0.95)";
+  const diamond = () => { g.beginPath(); g.moveTo(0, -30); g.lineTo(2.6, 0); g.lineTo(0, 30); g.lineTo(-2.6, 0); g.closePath(); g.fill(); };
+  diamond(); g.rotate(Math.PI / 2); diamond();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function CrossSparkles({ dark }) {
+  const tex = useMemo(crossTexture, []);
+  const positions = useMemo(() => {
+    const n = 30, a = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { a[i * 3] = (Math.random() - 0.5) * 40; a[i * 3 + 1] = (Math.random() - 0.5) * 22; a[i * 3 + 2] = -5 - Math.random() * 5; }
+    return a;
+  }, []);
+  const ref = useRef();
+  useFrame((s, d) => { if (ref.current) { ref.current.rotation.z += d * 0.004; ref.current.material.opacity = (dark ? 0.8 : 0.65) + Math.sin(s.clock.elapsedTime * 1.5) * 0.12; } });
+  return (
+    <points ref={ref}>
+      <bufferGeometry><bufferAttribute attach="attributes-position" args={[positions, 3]} /></bufferGeometry>
+      <pointsMaterial map={tex} size={1.7} sizeAttenuation transparent depthWrite={false} color={dark ? "#e6e8ff" : "#9b8fe6"} opacity={dark ? 0.8 : 0.65} blending={dark ? THREE.AdditiveBlending : THREE.NormalBlending} />
+    </points>
   );
 }
 
@@ -134,6 +160,7 @@ function Scene({ dark, intro }) {
   return (
     <>
       <CameraRig intro={intro} />
+      {!dark && <DawnBackdrop />}
       <group ref={group}>
         {dark ? (
           <>
@@ -144,14 +171,14 @@ function Scene({ dark, intro }) {
           </>
         ) : (
           <>
-            <Nebula />
-            <Sparkles count={60} scale={[26, 16, 8]} size={3.2} speed={0.2} color="#9b87f5" opacity={0.5} />
+            <CrossSparkles dark={dark} />
+            <Sparkles count={28} scale={[30, 18, 8]} size={2.4} speed={0.18} color="#b9aef0" opacity={0.45} />
           </>
         )}
       </group>
       <EffectComposer disableNormalPass>
-        <Bloom intensity={dark ? 1.3 : 0.2} luminanceThreshold={dark ? 0.0 : 0.7} luminanceSmoothing={0.85} mipmapBlur radius={0.75} />
-        <Vignette eskil={false} offset={0.22} darkness={dark ? 0.62 : 0.18} />
+        <Bloom intensity={dark ? 1.3 : 0.08} luminanceThreshold={dark ? 0.0 : 0.95} luminanceSmoothing={0.85} mipmapBlur radius={0.75} />
+        <Vignette eskil={false} offset={0.22} darkness={dark ? 0.62 : 0.1} />
       </EffectComposer>
     </>
   );

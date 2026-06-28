@@ -34,3 +34,4 @@ npm-debug.log*
 
 # --- Playwright artifacts ---
 .playwright-mcp/
+galaxy_light_theme.png

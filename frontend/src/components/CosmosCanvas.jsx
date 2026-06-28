@@ -1,5 +1,5 @@
 import { useRef, useMemo } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Stars, Sparkles } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
@@ -108,7 +108,23 @@ function ShootingStar() {
   return (<mesh ref={ref}><planeGeometry args={[2.6, 0.03]} /><meshBasicMaterial color="#fff" transparent opacity={0} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>);
 }
 
-function Scene({ dark }) {
+// ---- cinematic warp-in: camera eases from far → resting position ------------
+function CameraRig({ intro }) {
+  const { camera } = useThree();
+  const t0 = useRef(null);
+  useFrame(() => {
+    if (!intro) return;
+    if (t0.current === null) t0.current = performance.now();
+    const p = (performance.now() - t0.current) / 1800;
+    if (p >= 1) return;
+    const e = 1 - Math.pow(1 - p, 3); // easeOutCubic
+    camera.position.z = 15 - 9 * e;   // 15 → 6
+    camera.lookAt(0, 0, 0);
+  });
+  return null;
+}
+
+function Scene({ dark, intro }) {
   const group = useRef();
   useFrame((s) => {
     if (!group.current) return;
@@ -117,6 +133,7 @@ function Scene({ dark }) {
   });
   return (
     <>
+      <CameraRig intro={intro} />
       <group ref={group}>
         {dark ? (
           <>
@@ -140,11 +157,11 @@ function Scene({ dark }) {
   );
 }
 
-export default function CosmosCanvas({ dark = true }) {
+export default function CosmosCanvas({ dark = true, intro = false }) {
   return (
-    <Canvas dpr={[1, 1.6]} gl={{ antialias: false, powerPreference: "high-performance", alpha: false }} camera={{ position: [0, 0, 6], fov: 62 }}>
+    <Canvas dpr={[1, 1.6]} gl={{ antialias: false, powerPreference: "high-performance", alpha: false }} camera={{ position: [0, 0, intro ? 15 : 6], fov: 62 }}>
       <color attach="background" args={[dark ? "#04040c" : "#f4f2fb"]} />
-      <Scene dark={dark} />
+      <Scene dark={dark} intro={intro} />
     </Canvas>
   );
 }

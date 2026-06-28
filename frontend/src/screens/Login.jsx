@@ -200,7 +200,7 @@ export default function Login() {
 
       <main className="w-full max-w-[440px] px-margin-mobile relative z-10">
         {/* Brand */}
-        <div className="text-center mb-unit-xl">
+        <div className="text-center mb-unit-xl login-enter-soft">
           <h1 className="font-headline-lg text-headline-lg font-bold text-primary tracking-tighter">
             Deadline
           </h1>
@@ -210,7 +210,7 @@ export default function Login() {
         </div>
 
         {/* Card */}
-        <div className="glass-card rounded-2xl p-unit-lg shadow-2xl">
+        <div className="glass-card rounded-2xl p-unit-lg shadow-2xl login-enter">
           <div className="mb-unit-lg">
             <h2 className="font-headline-md text-headline-md text-on-surface font-semibold">
               {isRecover ? "Reset Password" : isSignup ? "Create Account" : "Sign In"}

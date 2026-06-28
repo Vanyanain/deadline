@@ -131,6 +131,10 @@ body { font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antial
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 .animate-fade-in-up { animation: fade-in-up .55s cubic-bezier(.16,1,.3,1) both; }
 .animate-fade-in { animation: fade-in .4s ease both; }
+/* cinematic login entrance — synced with the cosmos warp-in */
+@keyframes login-enter { from { opacity: 0; transform: translateY(30px) scale(.985); } to { opacity: 1; transform: none; } }
+.login-enter { animation: login-enter 1s cubic-bezier(.16,1,.3,1) .45s both; }
+.login-enter-soft { animation: login-enter .9s cubic-bezier(.16,1,.3,1) .2s both; }
 .card-lift { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
 .card-lift:hover { transform: translateY(-3px); box-shadow: 0 12px 30px -12px rgba(0,0,0,.30); }
 .dark .card-lift:hover { box-shadow: 0 12px 30px -10px rgba(0,0,0,.55); }

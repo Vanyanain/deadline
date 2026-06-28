@@ -47,7 +47,7 @@ export default function CosmosBackground() {
       <div className="cosmos-canvas" aria-hidden="true">
         {!hidden && (
           <Suspense fallback={null}>
-            <CosmosCanvas dark={theme === "dark"} />
+            <CosmosCanvas dark={theme === "dark"} intro={onLogin} />
           </Suspense>
         )}
       </div>

@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 
 export function getCosmos() {
   try {
-    return localStorage.getItem("cosmos") || "off";
+    return localStorage.getItem("cosmos") || "on";
   } catch {
-    return "off";
+    return "on";
   }
 }
 

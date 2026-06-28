@@ -861,10 +861,12 @@ def smart_suggest(uid: str) -> dict:
 
 
 def tick(uid: str) -> dict:
-    """Autonomous OBSERVE -> REPLAN cycle for Cloud Scheduler."""
+    """OBSERVE -> REPLAN: flag at-risk tasks and draft an action for the most urgent.
+    Runs fully offline (template drafts) so the agent check always surfaces real
+    risk and prepares reviewable actions — even when Gemini is rate-limited."""
     now = datetime.now(timezone.utc)
     tasks = store.get_tasks(uid)
-    at_risk = []
+    scored = []
     for t in tasks:
         if t.get("status") == "done" or not t.get("deadline"):
             continue
@@ -876,16 +878,36 @@ def tick(uid: str) -> dict:
             continue
         hours_left = (dl - now).total_seconds() / 3600
         needed = t.get("effort_minutes", 60) / 60
-        if hours_left < needed * 2:
-            at_risk.append(t)
+        prio = t.get("priority", 3)
+        risky = (
+            hours_left < 0                          # overdue
+            or hours_left < needed * 2              # not enough time left to do it
+            or hours_left <= 24                     # due within a day
+            or (prio <= 2 and hours_left <= 48)     # high priority & due within two days
+        )
+        if risky:
+            scored.append((hours_left, prio, t))
 
+    scored.sort(key=lambda x: (x[0], x[1]))         # most urgent first
+    at_risk = [t for _, _, t in scored]
     actions = {"at_risk": [t["id"] for t in at_risk], "drafted": [], "replanned": False}
-    if at_risk:
-        store.replan(uid, reason=f"{len(at_risk)} task(s) at risk on tick")
-        actions["replanned"] = True
-        for t in at_risk:
-            role = "professor" if t.get("category") == "academic" else "manager"
+    if not at_risk:
+        return actions
+
+    store.replan(uid, reason=f"{len(at_risk)} task(s) at risk on tick")
+    actions["replanned"] = True
+    already = {a.get("task_id") for a in store.list_approvals(uid)}
+    for _, _, t in scored[:3]:                       # prepare actions for the 3 most urgent
+        if t["id"] in already:                       # don't pile up duplicate drafts
+            continue
+        cat = t.get("category", "personal")
+        if cat in ("academic", "work"):
+            role = "professor" if cat == "academic" else "manager"
             res = tools.draft_message(uid, task_id=t["id"], task_title=t.get("title", ""),
                                       intent="extension", recipient_role=role)
-            actions["drafted"].append(res.get("approval_id"))
+        else:
+            # Solo tasks (finance/health/personal/admin): a head-start beats an email.
+            res = tools.draft_deliverable(uid, task_id=t["id"], kind="checklist",
+                                          task_title=t.get("title", ""))
+        actions["drafted"].append(res.get("approval_id"))
     return actions

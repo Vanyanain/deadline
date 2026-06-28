@@ -156,10 +156,41 @@ def _gemini_generate(prompt: str, use_cache: bool = True) -> str:
     return text
 
 
+# ---- offline templates (used whenever Gemini is missing or rate-limited) -----
+
+def _msg_template(intent: str, role: str, title: str) -> str:
+    t = title or "this task"
+    if intent == "reschedule":
+        return (f"Subject: Rescheduling — {t}\n\nHi [{role}],\n\nSomething has come up and I need to "
+                f"reschedule {t}. Would [new date/time] work instead? Apologies for the change, and thank "
+                f"you for your flexibility.\n\nBest,\n[Your name]")
+    if intent == "decline":
+        return (f"Subject: Regarding {t}\n\nHi [{role}],\n\nThank you for thinking of me for {t}. "
+                f"Unfortunately I'm not able to take it on right now given my current commitments. "
+                f"I appreciate your understanding.\n\nBest,\n[Your name]")
+    if intent == "heads_up":
+        return (f"Subject: Heads-up on {t}\n\nHi [{role}],\n\nA quick heads-up that {t} may run slightly "
+                f"behind. I'm prioritizing it and will keep you posted — let me know if anything needs to "
+                f"change on your end.\n\nThanks,\n[Your name]")
+    return (f"Subject: Short extension request — {t}\n\nHi [{role}],\n\nI'm working on {t} and want to "
+            f"deliver it properly. Could I have a short extension to [new date]? I've already made progress "
+            f"on [part done], and the extra time would let me finish it well.\n\nThank you for "
+            f"understanding,\n[Your name]")
+
+
+def _deliverable_template(kind: str, title: str) -> str:
+    t = title or "this task"
+    return (f"**Checklist — {t}**\n\n"
+            f"- [ ] Gather what you need to start\n"
+            f"- [ ] Do the core work (the hard 20%)\n"
+            f"- [ ] Review and tidy up\n"
+            f"- [ ] Confirm it's done\n\n"
+            f"Tick the first box now — momentum does the rest.")
+
+
 def draft_deliverable(uid: str, task_id: str, kind: str, task_title: str = "") -> dict:
-    if not os.getenv("GEMINI_API_KEY"):
-        draft_text = f"[Set GEMINI_API_KEY to generate a real {kind} for '{task_title or task_id}']"
-    else:
+    draft_text = ""
+    if os.getenv("GEMINI_API_KEY"):
         try:
             prompt = (
                 f"You are a productivity assistant. Write a ready-to-use first draft for this task:\n"
@@ -167,13 +198,14 @@ def draft_deliverable(uid: str, task_id: str, kind: str, task_title: str = "") -
                 f"Rules:\n"
                 f"- essay/outline: write 3-5 bullet-point sections with a 2-sentence intro\n"
                 f"- email: write a complete ready-to-send email, professional and concise\n"
-                f"- code: write a working stub with type hints and comments\n"
+                f"- checklist: 4-6 concrete items, each on its own line starting with '- [ ] '\n"
                 f"- other: write the most useful starting artifact you can\n"
                 f"Be concrete and actionable. Return only the draft, no preamble."
             )
             draft_text = _gemini_generate(prompt)
-        except Exception as e:
-            draft_text = f"[Draft generation failed: {e}]"
+        except Exception:
+            draft_text = ""
+    draft_text = (draft_text or "").strip() or _deliverable_template(kind, task_title or task_id)
 
     item = store.enqueue_approval(uid, {
         "type": "deliverable", "task_id": task_id, "kind": kind,
@@ -184,6 +216,7 @@ def draft_deliverable(uid: str, task_id: str, kind: str, task_title: str = "") -
 
 def draft_message(uid: str, task_id: str, intent: str,
                   recipient_role: str = "stakeholder", task_title: str = "") -> dict:
+    draft_text = ""
     if os.getenv("GEMINI_API_KEY"):
         try:
             intent_phrases = {
@@ -200,9 +233,8 @@ def draft_message(uid: str, task_id: str, intent: str,
             )
             draft_text = _gemini_generate(prompt)
         except Exception:
-            draft_text = f"[{intent} message to {recipient_role} re '{task_title or task_id}']"
-    else:
-        draft_text = f"[{intent} message to your {recipient_role} re '{task_title or task_id}']"
+            draft_text = ""
+    draft_text = (draft_text or "").strip() or _msg_template(intent, recipient_role, task_title or task_id)
 
     item = store.enqueue_approval(uid, {
         "type": "message", "task_id": task_id, "task_title": task_title or task_id,
